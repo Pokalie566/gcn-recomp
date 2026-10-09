@@ -41,6 +41,11 @@ by hand; `frame` is for the reader.
 
 ## Scripted input
 
+`GCN_MEMCARD=<file>` runs on another memory card than the player's, created formatted if it
+does not exist: a scripted run should start from an empty card, and must not write to the
+real one.
+
+
 `GCN_INPUT="frame:BUTTON:duration,..."` presses buttons at given submitted-frame counts; `+`
 joins buttons (`A+B`), `SL SR SU SD` push the control stick and `CL CR CU CD` the C stick,
 all the way or by the percentage that follows (`CR30`). Presses are counted in

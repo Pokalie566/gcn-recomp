@@ -312,6 +312,12 @@ int main(int argc, char** argv) {
         if (!input_replay_load(replay_dir, replay_card)) return 1;
         if (!replay_card.empty()) g_memcard_path = replay_card.c_str();
     }
+    // GCN_MEMCARD=<file>: another card than the player's, created formatted if absent --
+    // for a scripted run, which must neither see nor touch the real saves.
+    if (const char* mc = getenv("GCN_MEMCARD"); mc && replay_card.empty()) {
+        replay_card = mc;
+        g_memcard_path = replay_card.c_str();
+    }
     if (input_log) {
         if (input_log_dir.empty()) {
             char stamp[64];
