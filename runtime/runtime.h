@@ -30,6 +30,12 @@ extern uint8_t* g_aram;
 extern const char* g_save_dir;
 // Overrides the memory card's file when set (see exi.cpp).
 extern const char* g_memcard_path;
+
+// 16:9 output (--widescreen or GCN_WIDESCREEN=1, read before the renderer starts). The
+// renderer stores and shows the EFB 4/3 wider; on its own that only stretches a 4:3
+// picture, so a game project that wants real widescreen widens its camera to match --
+// typically by scaling the aspect the game passes to MTXPerspective when this is set.
+extern bool g_widescreen;
 inline uint8_t* mem_ptr(uint32_t a) { return HOST(a); }
 inline uint32_t mem_r32(uint32_t a) { uint32_t v; memcpy(&v, HOST(a), 4); return GCN_BSWAP32(v); }
 inline uint16_t mem_r16(uint32_t a) { uint16_t v; memcpy(&v, HOST(a), 2); return GCN_BSWAP16(v); }

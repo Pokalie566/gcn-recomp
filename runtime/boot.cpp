@@ -61,3 +61,5 @@ uint32_t boot_load(const char* iso_path) {
     cp_init();
     return entry;
 }
+
+bool g_widescreen = false;
