@@ -2,6 +2,7 @@
 #include "bindings.h"
 #include <algorithm>
 #include <cmath>
+#include <cstring>
 
 const char* const kPadActionNames[ACT_COUNT] = {
     "a", "b", "x", "y", "z", "start",
@@ -36,6 +37,46 @@ Bindings bindings_default() {
     set(ACT_C_LEFT, {"axis:-rightx"});
     set(ACT_C_RIGHT, {"axis:+rightx"});
     return b;
+}
+
+static bool starts(const std::string& s, const char* p) { return s.compare(0, strlen(p), p) == 0; }
+
+static std::string button_name(const std::string& b) {
+    static const struct { const char* sdl; const char* name; } kNames[] = {
+        {"a", "A"}, {"b", "B"}, {"x", "X"}, {"y", "Y"}, {"back", "Back"}, {"guide", "Guide"},
+        {"start", "Start"}, {"leftstick", "L3"}, {"rightstick", "R3"}, {"leftshoulder", "LB"},
+        {"rightshoulder", "RB"}, {"dpup", "D-pad up"}, {"dpdown", "D-pad down"},
+        {"dpleft", "D-pad left"}, {"dpright", "D-pad right"},
+    };
+    for (const auto& n : kNames)
+        if (b == n.sdl) return n.name;
+    return b;
+}
+
+static std::string axis_name(const std::string& in) {   // "axis:-lefty"
+    const bool neg = in[5] == '-';
+    const std::string a = in.substr(6);
+    if (a == "lefttrigger") return "LT";
+    if (a == "righttrigger") return "RT";
+    const bool x = a.back() == 'x';
+    return std::string(starts(a, "left") ? "Left stick " : "Right stick ") +
+           (x ? (neg ? "left" : "right") : (neg ? "up" : "down"));
+}
+
+std::string binding_label(const std::vector<std::string>& inputs, bool controller) {
+    for (const std::string& in : inputs) {
+        if (!controller && starts(in, "key:")) return in.substr(4);
+        if (controller && starts(in, "pad:")) return button_name(in.substr(4));
+        if (controller && starts(in, "axis:") && in.size() > 6) return axis_name(in);
+    }
+    return "-";
+}
+
+void binding_replace(std::vector<std::string>& inputs, bool controller, const std::string& input) {
+    inputs.erase(std::remove_if(inputs.begin(), inputs.end(),
+                                [&](const std::string& in) { return starts(in, "key:") != controller; }),
+                 inputs.end());
+    if (!input.empty()) inputs.push_back(input);
 }
 
 PadState pad_from_actions(const float a[ACT_COUNT]) {

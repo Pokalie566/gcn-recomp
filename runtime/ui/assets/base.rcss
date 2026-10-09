@@ -1,0 +1,184 @@
+/* Layout of the menus. Colours are in theme.rcss, which a game project may replace.
+   Sizes are in dp: the window is 720dp tall, whatever its size (ui.h). */
+
+body, div, p, h1, h2, button { display: block; }
+span { display: inline; }
+
+body {
+	width: 100%;
+	height: 100%;
+	font-family: "Fira Sans";
+	font-size: 22dp;
+}
+
+button {
+	tab-index: auto;
+	nav: auto;
+	cursor: pointer;
+}
+
+/* ---- Pause menu ---- */
+
+body.pause .side {
+	position: absolute;
+	left: 96dp;
+	top: 0;
+	bottom: 0;
+	width: 440dp;
+	padding-top: 210dp;
+}
+
+.kicker {
+	font-size: 15dp;
+	font-weight: bold;
+	letter-spacing: 3dp;
+}
+
+h1 {
+	font-size: 64dp;
+	font-weight: bold;
+	margin: 2dp 0 36dp 0;
+}
+
+.menu button {
+	font-size: 30dp;
+	padding: 10dp 22dp;
+	margin-bottom: 6dp;
+	border-radius: 10dp;
+	nav: vertical;
+	transition: background-color color 0.12s cubic-out;
+}
+
+.hints {
+	position: absolute;
+	bottom: 40dp;
+	font-size: 16dp;
+}
+body.pause .hints { left: 96dp; }
+.hints span { margin-right: 22dp; }
+.hints .k {
+	font-weight: bold;
+	padding: 1dp 7dp;
+	border-radius: 5dp;
+	margin-right: 6dp;
+}
+
+/* ---- Settings ---- */
+
+.window {
+	position: absolute;
+	left: 50%;
+	top: 50%;
+	box-sizing: border-box;
+	width: 880dp;
+	height: 640dp;
+	margin-left: -440dp;
+	margin-top: -330dp;
+	padding: 30dp 36dp;
+	border-radius: 18dp;
+	border-width: 1dp;
+}
+
+.window h1 {
+	font-size: 36dp;
+	margin: 0 0 18dp 0;
+}
+
+.tabs { margin-bottom: 18dp; }
+.tabs button {
+	display: inline-block;
+	font-size: 20dp;
+	font-weight: bold;
+	padding: 8dp 20dp;
+	margin-right: 8dp;
+	border-radius: 20dp;
+	transition: background-color color 0.12s cubic-out;
+}
+
+.page {
+	display: none;
+	height: 420dp;
+	overflow-y: auto;
+	padding-right: 10dp;
+}
+.page.shown { display: block; }
+
+.row {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	height: 54dp;
+	padding: 0 18dp;
+	margin-bottom: 4dp;
+	border-radius: 10dp;
+	nav: vertical;
+	transition: background-color 0.12s cubic-out;
+}
+
+.row .note {
+	font-size: 15dp;
+	margin-left: 12dp;
+}
+
+.switch {
+	display: block;
+	width: 50dp;
+	height: 28dp;
+	border-radius: 14dp;
+	transition: background-color 0.15s cubic-out;
+}
+.switch .knob {
+	display: block;
+	width: 22dp;
+	height: 22dp;
+	margin: 3dp;
+	border-radius: 11dp;
+	transition: margin-left 0.15s cubic-out;
+}
+.switch.on .knob { margin-left: 25dp; }
+
+.stepper .value { font-weight: bold; }
+.stepper .arrow {
+	padding: 0 12dp;
+	cursor: pointer;
+}
+
+h2 {
+	font-size: 15dp;
+	font-weight: bold;
+	letter-spacing: 2dp;
+	margin: 20dp 18dp 8dp 18dp;
+}
+
+.bind {
+	display: flex;
+	align-items: center;
+	height: 44dp;
+	padding: 0 18dp;
+}
+.bind .name { width: 260dp; }
+.bind button {
+	width: 240dp;
+	height: 36dp;
+	line-height: 36dp;
+	margin-right: 12dp;
+	text-align: center;
+	font-size: 18dp;
+	border-radius: 8dp;
+	transition: background-color color 0.12s cubic-out;
+}
+
+scrollbarvertical {
+	width: 6dp;
+	margin-left: 4dp;
+}
+scrollbarvertical sliderbar {
+	border-radius: 3dp;
+	min-height: 30dp;
+}
+
+body.settings .hints {
+	left: 50%;
+	margin-left: -440dp;
+	bottom: 26dp;
+}

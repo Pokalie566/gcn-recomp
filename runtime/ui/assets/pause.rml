@@ -1,0 +1,19 @@
+<rml>
+<head>
+	<title>Pause</title>
+	<link type="text/rcss" href="base.rcss"/>
+	<link type="text/rcss" href="theme.rcss"/>
+</head>
+<body class="pause" data-model="ui">
+	<div class="side">
+		<p class="kicker">{{title}}</p>
+		<h1>Paused</h1>
+		<div class="menu">
+			<button autofocus="autofocus" data-event-click="resume">Resume</button>
+			<button data-event-click="settings">Settings</button>
+			<button data-event-click="quit">Quit</button>
+		</div>
+	</div>
+	<p class="hints"><span><span class="k">Enter / A</span>Select</span><span><span class="k">Esc / B</span>Resume</span></p>
+</body>
+</rml>

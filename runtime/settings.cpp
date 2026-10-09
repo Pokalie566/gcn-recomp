@@ -49,7 +49,7 @@ bool settings_load(const std::string& path, Settings& s) {
 
 bool settings_save(const std::string& path, const Settings& s) {
     std::ofstream out(path);
-    out << "# Settings, read at startup and when the game resumes from pause (Esc).\n"
+    out << "# Settings, read at startup; the pause menu (Esc) changes them.\n"
            "# Options on the command line override them for one run.\n"
         << "iso = " << s.iso << "\n"
         << "scale = " << s.scale << "\n"

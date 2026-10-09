@@ -30,6 +30,14 @@ struct Bindings {
 // Keyboard and controller, laid out like a GameCube pad.
 Bindings bindings_default();
 
+// What a menu shows for an action on one device, the keyboard or a controller: the first of
+// its inputs from that device, by a name a player knows ("X", "LB", "Left stick up"), or "-".
+std::string binding_label(const std::vector<std::string>& inputs, bool controller);
+
+// Rebinds an action on one device: its inputs from that device give way to `input` (none if
+// it is empty), the other device's stay.
+void binding_replace(std::vector<std::string>& inputs, bool controller, const std::string& input);
+
 // The pad, given how far each action is pushed, 0 to 1. The triggers are analog, their
 // button clicking in at the end of the travel, as on the real pad; the sticks go 100 either
 // side of centre.

@@ -33,6 +33,8 @@ option(GCN_GUEST_CHECKS "Call the game project's consistency checks at every pol
 #                              offers a game (render_set_eye_hook in runtime/gx/render_gl.h,
 #                              vr::GameHooks in runtime/vr_game.h), installed from a static
 #                              initializer
+#   [UI <dir>]                 the game's own files for the menus, copied over the
+#                              defaults (runtime/ui/assets): its theme.rcss, typically
 #   [ANDROID_PACKAGE <id>]     e.g. com.example.game. On an Android build, also build the
 #                              headset app (lib<target>.so, a NativeActivity that
 #                              tools/package-apk.ps1 packages) and <target>_egl, the
@@ -40,7 +42,7 @@ option(GCN_GUEST_CHECKS "Call the game project's consistency checks at every pol
 # )
 # The user's image may also be given as -DGAME_ISO=<path>.
 function(gcn_add_game)
-  cmake_parse_arguments(G "" "NAME;TITLE;DISC_ID;DOL_SHA1;SYMBOLS;TABLES;FPS;IMAGE_DIR;ANDROID_PACKAGE" "SOURCES" ${ARGN})
+  cmake_parse_arguments(G "" "NAME;TITLE;DISC_ID;DOL_SHA1;SYMBOLS;TABLES;FPS;IMAGE_DIR;UI;ANDROID_PACKAGE" "SOURCES" ${ARGN})
   foreach(req NAME TITLE DISC_ID DOL_SHA1 SYMBOLS TABLES FPS)
     if(NOT G_${req})
       message(FATAL_ERROR "gcn_add_game: ${req} is required")
@@ -148,6 +150,7 @@ function(gcn_add_game)
   list(REMOVE_ITEM CORE_SOURCES
     ${RT}/main.cpp ${RT}/audio.cpp ${RT}/audio_sdl.cpp ${RT}/png.cpp
     ${RT}/gx/render_gl.cpp ${RT}/gx/gl_load.cpp ${RT}/gx/shadergen.cpp)
+  list(FILTER CORE_SOURCES EXCLUDE REGEX "/runtime/ui/")
   list(APPEND CORE_SOURCES ${RT}/audio_stub.cpp)
   set(BENCH_SOURCES ${CORE_SOURCES} ${RT}/bench_main.cpp)
 
@@ -255,6 +258,46 @@ function(gcn_add_game)
     target_link_libraries(${G_NAME}_bench PRIVATE dbghelp)
   endif()
 
+  # The menus (runtime/ui): RmlUi (MIT) over FreeType (FTL), both built here and linked
+  # statically, so that nothing has to be installed and an app carries them. RmlUi's own
+  # backends for SDL2 and OpenGL 3 draw it, on our GL loader (gx/gl.h).
+  if(NOT GCN_BENCH_ONLY)
+    include(FetchContent)
+    set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)   # the options below, as plain variables
+    set(BUILD_SHARED_LIBS OFF)
+    foreach(dep ZLIB BZIP2 PNG HARFBUZZ BROTLI)
+      set(FT_DISABLE_${dep} ON)
+    endforeach()
+    FetchContent_Declare(freetype
+      URL https://github.com/freetype/freetype/archive/refs/tags/VER-2-13-3.tar.gz
+      URL_HASH SHA256=bc5c898e4756d373e0d991bab053036c5eb2aa7c0d5c67e8662ddc6da40c4103
+      DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+    FetchContent_MakeAvailable(freetype)
+    add_library(Freetype::Freetype ALIAS freetype)   # what RmlUi looks for, and not elsewhere
+    set(CMAKE_DISABLE_FIND_PACKAGE_Freetype ON)
+    FetchContent_Declare(rmlui
+      URL https://github.com/mikke89/RmlUi/archive/refs/tags/6.3.tar.gz
+      URL_HASH SHA256=d977298bb6147610e5984d5db85ddf284020d655a8713913f6982074f1dbdede
+      DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+    FetchContent_MakeAvailable(rmlui)
+    add_library(gcn_rmlui_backend STATIC
+      ${rmlui_SOURCE_DIR}/Backends/RmlUi_Renderer_GL3.cpp ${rmlui_SOURCE_DIR}/Backends/RmlUi_Platform_SDL.cpp)
+    target_include_directories(gcn_rmlui_backend PUBLIC ${rmlui_SOURCE_DIR}/Backends PRIVATE ${RT} ${GLAD_INCLUDE_DIR})
+    target_compile_definitions(gcn_rmlui_backend PUBLIC RMLUI_SDL_VERSION_MAJOR=2
+                               PRIVATE "RMLUI_GL3_CUSTOM_LOADER=\"gx/gl.h\"" ${GCN_GL_DEFS})
+    target_link_libraries(gcn_rmlui_backend PUBLIC RmlUi::RmlUi ${GCN_SDL_TARGET})
+    if(APPLE)
+      target_link_libraries(gcn_rmlui_backend PUBLIC "-framework OpenGL")
+    endif()
+
+    # The menus' documents beside the executable, as ui/: ours, then the game's over them.
+    set(_ui_copy COMMAND ${CMAKE_COMMAND} -E copy_directory ${RT}/ui/assets $<TARGET_FILE_DIR:${G_NAME}>/ui)
+    if(G_UI)
+      list(APPEND _ui_copy COMMAND ${CMAKE_COMMAND} -E copy_directory ${G_UI} $<TARGET_FILE_DIR:${G_NAME}>/ui)
+    endif()
+    add_custom_target(${G_NAME}_ui ${_ui_copy} VERBATIM)
+  endif()
+
   # The game: the runtime and the game project's code, with no game code of its own -- that
   # is a module it loads (runtime/game_module.h) -- so it builds without a disc image. Its
   # symbols are exported for the module to call.
@@ -262,8 +305,9 @@ function(gcn_add_game)
     add_executable(${G_NAME} ${RUNTIME_SOURCES} ${G_SOURCES})
     _gcn_set_standards(${G_NAME})
     target_include_directories(${G_NAME} PRIVATE ${RT} ${GLAD_INCLUDE_DIR})
-    target_link_libraries(${G_NAME} PRIVATE ${GCN_SDL_TARGET} ${GCN_PLATFORM_LIBS} ${CMAKE_DL_LIBS})
+    target_link_libraries(${G_NAME} PRIVATE gcn_rmlui_backend ${GCN_SDL_TARGET} ${GCN_PLATFORM_LIBS} ${CMAKE_DL_LIBS})
     set_target_properties(${G_NAME} PROPERTIES ENABLE_EXPORTS ON)
+    add_dependencies(${G_NAME} ${G_NAME}_ui)
     if(TARGET ${G_NAME}_game)
       add_dependencies(${G_NAME} ${G_NAME}_game)
     endif()

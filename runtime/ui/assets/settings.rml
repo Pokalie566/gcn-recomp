@@ -1,0 +1,68 @@
+<rml>
+<head>
+	<title>Settings</title>
+	<link type="text/rcss" href="base.rcss"/>
+	<link type="text/rcss" href="theme.rcss"/>
+</head>
+<body class="settings" data-model="ui">
+	<div class="window">
+		<h1>Settings</h1>
+		<div class="tabs">
+			<button id="tab0" autofocus="autofocus" data-class-active="tab == 0" data-event-click="tab(0)">Graphics</button>
+			<button id="tab1" data-class-active="tab == 1" data-event-click="tab(1)">Controls</button>
+			<button id="tab2" data-class-active="tab == 2" data-event-click="tab(2)">Audio</button>
+		</div>
+
+		<div class="page" data-class-shown="tab == 0">
+			<button class="row stepper" nudge="scale">
+				<span>Internal resolution</span>
+				<span class="value"><span class="arrow" data-event-click="nudge('scale', -1)">‹</span>{{scale}}×<span class="arrow" data-event-click="nudge('scale', 1)">›</span></span>
+			</button>
+			<button class="row" data-event-click="toggle('widescreen')">
+				<span>Widescreen <span class="note">16:9</span></span>
+				<span class="switch" data-class-on="widescreen"><span class="knob"/></span>
+			</button>
+			<button class="row" data-event-click="toggle('interpolate')">
+				<span>60 FPS <span class="note">an in-between frame for every frame of the game</span></span>
+				<span class="switch" data-class-on="interpolate"><span class="knob"/></span>
+			</button>
+			<button class="row" data-event-click="toggle('fullscreen')">
+				<span>Fullscreen <span class="note">F11</span></span>
+				<span class="switch" data-class-on="fullscreen"><span class="knob"/></span>
+			</button>
+			<button class="row" data-event-click="toggle('textures')">
+				<span>Texture packs <span class="note">from textures/</span></span>
+				<span class="switch" data-class-on="textures"><span class="knob"/></span>
+			</button>
+		</div>
+
+		<div class="page" data-class-shown="tab == 1">
+			<button class="row" data-event-click="toggle('mouse_aim')">
+				<span>Mouse aim <span class="note">the mouse as the C stick</span></span>
+				<span class="switch" data-class-on="mouse_aim"><span class="knob"/></span>
+			</button>
+			<button class="row stepper" nudge="mouse_sens">
+				<span>Mouse sensitivity</span>
+				<span class="value"><span class="arrow" data-event-click="nudge('mouse_sens', -1)">‹</span>{{mouse_sens | format(2)}}<span class="arrow" data-event-click="nudge('mouse_sens', 1)">›</span></span>
+			</button>
+			<h2>BUTTONS</h2>
+			<div class="bind" data-for="row, i : binds">
+				<span class="name">{{row.label}}</span>
+				<button data-event-click="capture(i, 'key')">{{row.key}}</button>
+				<button data-event-click="capture(i, 'pad')">{{row.pad}}</button>
+			</div>
+			<button class="row" data-event-click="reset_bindings">
+				<span>Reset controls to defaults</span>
+			</button>
+		</div>
+
+		<div class="page" data-class-shown="tab == 2">
+			<button class="row stepper" nudge="volume">
+				<span>Volume</span>
+				<span class="value"><span class="arrow" data-event-click="nudge('volume', -1)">‹</span>{{volume}} %<span class="arrow" data-event-click="nudge('volume', 1)">›</span></span>
+			</button>
+		</div>
+	</div>
+	<p class="hints"><span><span class="k">Enter / A</span>Select</span><span><span class="k">← →</span>Change</span><span><span class="k">LB / RB</span>Tab</span><span><span class="k">Esc / B</span>Back</span></p>
+</body>
+</rml>

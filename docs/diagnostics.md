@@ -16,6 +16,12 @@ default), as Esc would, then resumes. A run paused that way must play out exactl
 that is not: the guest stops at an interrupt poll, the virtual clock with it, and the time
 paused is not caught up (`guest_pause` in runtime.h).
 
+With it, the pause menu can be checked without anyone at the keyboard (runtime/ui/ui.h):
+`GCN_UI_SHOT=<dir>` writes each page of it there as a PNG, and `GCN_UI_INPUT=Down,Return,...`
+presses those keys in it, one every 16 frames, as a player would. Pausing at frame 300,
+`Down,Return,Down,Right,Down,Return,Escape,Escape` sets the internal scale to 3 and turns on
+16:9, which settings.ini and the frames after the pause must both show.
+
 ## The game module
 
 The executables load the recompiled game at startup (`runtime/game_module.h`): the

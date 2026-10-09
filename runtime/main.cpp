@@ -25,6 +25,7 @@
 #include "gx/texture_pack.h"
 #include "prepare.h"
 #include "settings.h"
+#include "ui/ui.h"
 #include <vector>
 
 uint32_t boot_load(const char* iso_path);
@@ -446,15 +447,20 @@ int main(int argc, char** argv) {
     audio_open();
     mouse_aim_init();
     apply_settings(win, cur, nullptr);
+    // The menus' documents: beside the executable, or in an app's resources.
+    const char* res = getenv("GCN_RESOURCES");
+    ui_init(win, res ? std::string(res) + "/ui" : plat_executable_dir() + "/ui");
     if (g_mouse_aim && !hidden) SDL_SetRelativeMouseMode(SDL_TRUE);
 
     uint32_t entry = boot_load(iso);
     threads_start_boot(entry);
 
     // Esc (or a controller's Back) pauses: the guest stops (guest_pause), the last frame
-    // stays on screen, the sound waits. Esc again resumes, once the guest has stopped, with
-    // settings.ini read again. GCN_PAUSE_AT=<frame>[:<ms>] pauses by itself at that presented
-    // frame for that long (default 1000 ms), for checking that a pause changes nothing.
+    // stays on screen under the pause menu (ui.h), the sound waits. Settings the player
+    // changes there apply at once, the guest being stopped, and are saved: from then on they
+    // win over the command line. GCN_PAUSE_AT=<frame>[:<ms>] pauses by itself at that
+    // presented frame for that long (default 1000 ms), for checking that a pause changes
+    // nothing.
     bool paused = false;
     std::chrono::steady_clock::time_point resume_at{};
     auto pause = [&] {
@@ -462,14 +468,12 @@ int main(int argc, char** argv) {
         guest_pause();
         audio_set_paused(true);
         SDL_SetRelativeMouseMode(SDL_FALSE);
-        SDL_SetWindowTitle(win, GCN_GAME_TITLE " (recompiled) - paused (Esc to resume)");
+        SDL_SetWindowTitle(win, GCN_GAME_TITLE " (recompiled) - paused");
+        ui_show_pause(cur);
     };
     auto resume = [&] {
-        if (!guest_paused()) return;   // still on its way: settings must not change under it
-        settings_load(settings_path, g_saved);
-        const Settings now = session_settings();
-        apply_settings(win, now, &cur);
-        cur = now;
+        if (!guest_paused()) return;   // still on its way to stopping
+        ui_hide();
         paused = false;
         resume_at = {};
         if (g_mouse_aim && !hidden) SDL_SetRelativeMouseMode(SDL_TRUE);
@@ -478,6 +482,16 @@ int main(int argc, char** argv) {
         SDL_SetWindowTitle(win, GCN_GAME_TITLE " (recompiled)");
     };
     const char* pause_at = getenv("GCN_PAUSE_AT");
+    // A change the player made: applied, and saved over settings.ini's.
+    auto commit = [&](const Settings& s) {
+        auto take = [&](auto m) { if (s.*m != cur.*m) g_saved.*m = s.*m; };
+        take(&Settings::iso), take(&Settings::scale), take(&Settings::widescreen), take(&Settings::interpolate);
+        take(&Settings::fullscreen), take(&Settings::textures), take(&Settings::mouse_aim);
+        take(&Settings::mouse_sens), take(&Settings::volume), take(&Settings::bindings);
+        settings_save(settings_path, g_saved);
+        apply_settings(win, s, &cur);
+        cur = s;
+    };
 
     bool running = true;
     uint32_t frames = 0;
@@ -489,16 +503,15 @@ int main(int argc, char** argv) {
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) running = false;
             else if (e.type == SDL_CONTROLLERDEVICEADDED && !g_ctrl) g_ctrl = SDL_GameControllerOpen(e.cdevice.which);
+            else if (paused && ui_event(e)) continue;
             else if ((e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_ESCAPE && !e.key.repeat) ||
                      (e.type == SDL_CONTROLLERBUTTONDOWN && e.cbutton.button == SDL_CONTROLLER_BUTTON_BACK))
                 paused ? resume() : pause();
             else if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_F11 && !e.key.repeat) {
-                // Saved, so that it outlasts the next resume's reading of the file.
-                g_saved.fullscreen = !cur.fullscreen;
-                settings_save(settings_path, g_saved);
-                const Settings now = session_settings();
-                apply_settings(win, now, &cur);
-                cur = now;
+                Settings s = cur;
+                s.fullscreen = !s.fullscreen;
+                commit(s);
+                ui_set_settings(cur);
             }
             else if (paused) continue;
             else if (g_mouse_aim && e.type == SDL_MOUSEMOTION && SDL_GetRelativeMouseMode())
@@ -509,6 +522,15 @@ int main(int argc, char** argv) {
                 SDL_SetRelativeMouseMode(SDL_GetRelativeMouseMode() ? SDL_FALSE : SDL_TRUE);
             else if (g_mouse_aim && e.type == SDL_MOUSEBUTTONDOWN && !SDL_GetRelativeMouseMode())
                 SDL_SetRelativeMouseMode(SDL_TRUE);
+        }
+        if (paused) {
+            switch (ui_take_action()) {
+            case UI_RESUME: resume(); break;
+            case UI_QUIT: running = false; break;
+            case UI_NONE: break;
+            }
+            Settings s = cur;
+            if (guest_paused() && ui_take_settings(s)) commit(s);
         }
         update_pad(paused);
         int dw, dh;
@@ -522,6 +544,9 @@ int main(int argc, char** argv) {
                     resume();
                 else if (gx::render_present_last()) {
                     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                    ui_render(dw, dh);
+                    ui_shot_tour(dw, dh);
+                    ui_script();
                     SDL_GL_SwapWindow(win);
                 }
                 SDL_Delay(12);
@@ -562,6 +587,7 @@ int main(int argc, char** argv) {
                 if ((g_interpolate == 2 || (secs > 0.025 && secs < 0.050)) &&
                     gx::render_execute_interpolated(*b, *prev)) {
                     glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                    ui_render(dw, dh);
                     SDL_GL_SwapWindow(win);
                     frames++;
                     if (g_interpolate == 1) std::this_thread::sleep_until(arrival + gap / 2);
@@ -572,6 +598,7 @@ int main(int argc, char** argv) {
         if (presented) {
             // macOS (GL on Metal) only presents correctly with the window framebuffer bound.
             glBindFramebuffer(GL_FRAMEBUFFER, 0);
+            ui_render(dw, dh);
             SDL_GL_SwapWindow(win);
             frames++;
             auto now = std::chrono::steady_clock::now();

@@ -71,8 +71,15 @@ configured with. Options for the player:
 These, the disc image, the volume, whether a texture pack is used and the pad bindings are
 **settings**, kept in `saves/settings.ini` (`runtime/settings.h`), which the first run
 writes with the defaults. An option on the command line overrides its setting for that run
-only. **Esc** (or a controller's Back) pauses: the frame stays on screen, the sound waits,
-and on resuming settings.ini is read again and whatever changed applies at once.
+only. **Esc** (or a controller's Back) pauses, with a menu over the frozen frame
+(`runtime/ui`, drawn with [RmlUi](https://github.com/mikke89/RmlUi)): resume, settings --
+graphics, controls with every pad button rebindable, audio -- and quit. A setting changed
+there applies at once and is saved. The menus' documents are `runtime/ui/assets`; a game
+project gives them its look with its own `theme.rcss` (gcn_add_game's `UI`).
+
+The menus use RmlUi (MIT) and FreeType (the FreeType License: portions of this software are
+copyright © The FreeType Project, www.freetype.org), both fetched and built by CMake, and
+the Fira Sans font (SIL Open Font License, `runtime/ui/assets/fonts/OFL.txt`).
 
 **Texture packs** are Dolphin's: copy a pack's `<game id>` folder (Dolphin's
 `Load/Textures/<game id>`) to `textures/` in the working directory and it is used as it is

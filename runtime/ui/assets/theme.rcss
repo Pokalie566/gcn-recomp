@@ -1,0 +1,30 @@
+/* Colours of the menus. A game project replaces this file with its own (gcn_add_game's
+   UI directory) to give them its look; base.rcss keeps the layout. */
+
+body { color: #e9ebf1; }
+body.pause { decorator: linear-gradient(to right, #07080bf2 0%, #07080bb0 45%, #07080b00 80%); }
+body.settings { background-color: #000000b0; }
+
+.kicker { color: #7fb4ff; }
+.hints { color: #9ba1b0; }
+.hints .k { background-color: #ffffff24; color: #e9ebf1; }
+
+.menu button:focus { background-color: #4d9bff; color: #06101f; }
+
+.window { background-color: #14171df5; border-color: #ffffff1a; }
+.tabs button { background-color: #ffffff12; color: #b9bfcc; }
+.tabs button.active { background-color: #e9ebf1; color: #0b0d12; }
+.tabs button:focus { background-color: #4d9bff; color: #06101f; }
+
+.row:focus, .bind button:focus { background-color: #4d9bff; color: #06101f; }
+.row .note { color: #8f96a6; }
+.row:focus .note { color: #0b2142; }
+.switch { background-color: #ffffff2a; }
+.switch.on { background-color: #4d9bff; }
+.row:focus .switch.on { background-color: #06101f; }
+.switch .knob { background-color: #ffffff; }
+
+h2 { color: #7fb4ff; }
+.bind button { background-color: #ffffff12; }
+
+scrollbarvertical sliderbar { background-color: #ffffff30; }
