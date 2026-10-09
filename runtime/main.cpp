@@ -22,6 +22,7 @@
 #include <thread>
 #include "mouse_aim.h"
 #include "gx/texture_pack.h"
+#include "prepare.h"
 #include <vector>
 
 uint32_t boot_load(const char* iso_path);
@@ -265,6 +266,7 @@ int main(int argc, char** argv) {
     // the same; GCN_INTERPOLATE=force draws one before every frame and never waits, for
     // looking at them in frame dumps of an unpaced run.
     int interpolate = 0;
+    bool prepare_only = false;   // --prepare: build the game module from the disc, then quit
     if (const char* ip = getenv("GCN_INTERPOLATE")) interpolate = !strcmp(ip, "force") ? 2 : atoi(ip) != 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--log-all")) for (auto& e : g_log_enabled) e = true;
@@ -286,6 +288,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--interpolate")) interpolate = 1;
         else if (!strcmp(argv[i], "--mouse-aim")) g_mouse_aim = true;
         else if (!strcmp(argv[i], "--dump-textures")) gx::texture_pack_enable_dump();
+        else if (!strcmp(argv[i], "--prepare")) prepare_only = true;
         else if (!strncmp(argv[i], "--dump-dir=", 11)) gx::g_dump_dir = argv[i] + 11;
         else if (!strncmp(argv[i], "--dump-every=", 13)) gx::g_dump_every = atoi(argv[i] + 13);
         else if (argv[i][0] != '-') iso = argv[i];
@@ -296,6 +299,9 @@ int main(int argc, char** argv) {
         fprintf(stderr, "No game image found. Put your " GCN_GAME_TITLE " .iso or .ciso in rom/ or pass its path.\n");
         return 1;
     }
+    // The game's code is a module built from the disc, not part of this executable.
+    if (!game_module_ensure(iso, prepare_only)) return 1;
+    if (prepare_only) return 0;
     mem_init();
     timing_init();
     if (fast) clock_set_scale(0);  // run as fast as the host allows; the game sees 60 Hz regardless

@@ -1,6 +1,7 @@
 // Host OS services: POSIX and Windows implementations of platform.h.
 #include "platform.h"
 #include <cctype>
+#include <cerrno>
 #include <chrono>
 #include <ctime>
 #include <cstdio>
@@ -183,6 +184,34 @@ bool plat_read_at(PlatFile* f, uint64_t offset, void* dst, uint32_t len) {
     return true;
 }
 
+
+// ---- modules and processes ----
+std::string plat_executable_dir() {
+    char buf[MAX_PATH];
+    const DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
+    std::string p(buf, n);
+    const size_t slash = p.find_last_of("\\/");
+    return slash == std::string::npos ? std::string(".") : p.substr(0, slash);
+}
+
+void* plat_module_open(const char* path, std::string* err) {
+    HMODULE m = LoadLibraryA(path);
+    if (!m && err) *err = "LoadLibrary failed (" + std::to_string(GetLastError()) + ")";
+    return (void*)m;
+}
+
+void* plat_module_symbol(void* module, const char* name) {
+    return (void*)GetProcAddress((HMODULE)module, name);
+}
+
+int plat_run(const std::vector<std::string>& argv, const char* log) {
+    (void)log;  // ponytail: output is inherited on Windows; redirect it if a launcher needs the log
+    std::vector<const char*> args;
+    for (const auto& a : argv) args.push_back(a.c_str());
+    args.push_back(nullptr);
+    return (int)_spawnvp(_P_WAIT, args[0], args.data());
+}
+
 // ===========================================================================
 #else  // POSIX
 // ===========================================================================
@@ -320,11 +349,70 @@ bool plat_read_at(PlatFile* f, uint64_t offset, void* dst, uint32_t len) {
     return true;
 }
 
+
+// ---- modules and processes ----
+#include <dlfcn.h>
+#include <spawn.h>
+#include <sys/wait.h>
+#ifdef __APPLE__
+#include <mach-o/dyld.h>
+#endif
+extern char** environ;
+
+std::string plat_executable_dir() {
+    std::string p;
+#ifdef __APPLE__
+    char buf[4096];
+    uint32_t size = sizeof(buf);
+    if (_NSGetExecutablePath(buf, &size) == 0) {
+        char real[4096];
+        p = realpath(buf, real) ? real : buf;
+    }
+#else
+    char buf[4096];
+    const ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
+    if (n > 0) p.assign(buf, (size_t)n);
+#endif
+    const size_t slash = p.find_last_of('/');
+    return slash == std::string::npos ? std::string(".") : p.substr(0, slash);
+}
+
+void* plat_module_open(const char* path, std::string* err) {
+    void* m = dlopen(path, RTLD_NOW | RTLD_LOCAL);
+    if (!m && err) { const char* e = dlerror(); *err = e ? e : "dlopen failed"; }
+    return m;
+}
+
+void* plat_module_symbol(void* module, const char* name) { return dlsym(module, name); }
+
+int plat_run(const std::vector<std::string>& argv, const char* log) {
+    std::vector<char*> args;
+    for (const auto& a : argv) args.push_back(const_cast<char*>(a.c_str()));
+    args.push_back(nullptr);
+    posix_spawn_file_actions_t fa;
+    posix_spawn_file_actions_init(&fa);
+    if (log) {
+        posix_spawn_file_actions_addopen(&fa, 1, log, O_WRONLY | O_CREAT | O_APPEND, 0644);
+        posix_spawn_file_actions_adddup2(&fa, 1, 2);
+    }
+    pid_t pid;
+    const int rc = posix_spawnp(&pid, args[0], &fa, nullptr, args.data(), environ);
+    posix_spawn_file_actions_destroy(&fa);
+    if (rc != 0) return -1;
+    int status = 0;
+    while (waitpid(pid, &status, 0) < 0) {
+        if (errno != EINTR) return -1;
+    }
+    return WIFEXITED(status) ? WEXITSTATUS(status) : -1;
+}
+
 #endif
 
 // ===========================================================================
 // Shared
 // ===========================================================================
+const char* g_data_dir;
+
 void plat_make_dirs(const std::string& path) {
     if (path.empty()) return;
     std::error_code ec;

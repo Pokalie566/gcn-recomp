@@ -1,5 +1,6 @@
 // Memory, CPU helper routines, timing and event scheduling.
 #include "runtime.h"
+#include "game_module.h"
 #include "platform.h"
 #include <algorithm>
 #include <atomic>
@@ -89,8 +90,8 @@ void mem_init() {
 static std::vector<RecompFn> g_fn_table;
 
 const char* func_name(uint32_t addr) {
-    for (uint32_t i = 0; i < g_recomp_func_count; i++)
-        if (g_recomp_funcs[i].addr == addr) return g_recomp_funcs[i].name;
+    for (uint32_t i = 0; i < g_game.count; i++)
+        if (g_game.funcs[i].addr == addr) return g_game.funcs[i].name;
     return "?";
 }
 
@@ -101,25 +102,25 @@ const char* func_name(uint32_t addr) {
 const char* func_containing(uint32_t addr, uint32_t* start) {
     uint32_t best = 0;
     const char* name = nullptr;
-    for (uint32_t i = 0; i < g_recomp_func_count; i++) {
-        uint32_t a = g_recomp_funcs[i].addr;
-        if (a <= addr && a >= best) { best = a; name = g_recomp_funcs[i].name; }
+    for (uint32_t i = 0; i < g_game.count; i++) {
+        uint32_t a = g_game.funcs[i].addr;
+        if (a <= addr && a >= best) { best = a; name = g_game.funcs[i].name; }
     }
     if (start) *start = best;
     return name ? name : "?";
 }
 
 static void build_fn_table() {
-    g_fn_table.assign((g_recomp_code_end - g_recomp_code_base) / 4, nullptr);
-    for (uint32_t i = 0; i < g_recomp_func_count; i++) {
-        uint32_t a = g_recomp_funcs[i].addr;
-        if (a >= g_recomp_code_base && a < g_recomp_code_end) g_fn_table[(a - g_recomp_code_base) / 4] = g_recomp_funcs[i].fn;
+    g_fn_table.assign((g_game.code_end - g_game.code_base) / 4, nullptr);
+    for (uint32_t i = 0; i < g_game.count; i++) {
+        uint32_t a = g_game.funcs[i].addr;
+        if (a >= g_game.code_base && a < g_game.code_end) g_fn_table[(a - g_game.code_base) / 4] = g_game.funcs[i].fn;
     }
 }
 
 extern "C" void call_indirect(CPU* c, uint32_t addr) {
-    if (addr >= g_recomp_code_base && addr < g_recomp_code_end && !(addr & 3)) {
-        RecompFn fn = g_fn_table[(addr - g_recomp_code_base) / 4];
+    if (addr >= g_game.code_base && addr < g_game.code_end && !(addr & 3)) {
+        RecompFn fn = g_fn_table[(addr - g_game.code_base) / 4];
         if (fn) { fn(c); return; }
     }
     fatal("call_indirect: no function at %08X (lr=%08X)", addr, c->lr);

@@ -13,6 +13,7 @@
 // than gameplay and would otherwise skew the average. Those are reported but excluded
 // from the steady-state figure, so numbers from two devices are comparable.
 #include "runtime.h"
+#include "prepare.h"
 #include "platform.h"
 #include "gx/render.h"
 #include "input_script.h"
@@ -69,6 +70,7 @@ int main(int argc, char** argv) {
     for (auto& e : g_log_enabled) e = false;
     plat_install_crash_handlers(on_interrupt, on_fault);
 
+    if (!game_module_ensure(iso.c_str(), false)) return 1;
     mem_init();
     timing_init();
     // The benchmark measures the host, so the guest runs flat out: virtual time is never

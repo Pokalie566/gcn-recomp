@@ -12,6 +12,7 @@
 //   * OSLoadContext(ctx) resumes whichever host thread owns the binding (possibly
 //     ourselves), or spawns a new host thread for a never-run context.
 #include "runtime.h"
+#include "game_module.h"
 #include "platform.h"
 #include "input_log.h"
 #include <atomic>
@@ -167,10 +168,10 @@ extern "C" jmp_buf* hle_context_jmpbuf(CPU* c) {
     return &g_bindings[c->r[3]].jb;
 }
 
-extern "C" void orig_OSSaveContext(CPU* c);
+// The recompiled original, from the game module (game_module.h).
 extern "C" void hle_OSSaveContext(CPU* c) {
     uint32_t ctx = c->r[3];
-    orig_OSSaveContext(c);  // writes the context to guest memory, returns r3 = 0
+    g_game.orig_OSSaveContext(c);  // writes the context to guest memory, returns r3 = 0
     Binding& b = g_bindings[ctx];
     b.h = t_self;
     b.kind = BIND_SAVED;
@@ -421,7 +422,7 @@ void debug_sampler_start() {
                     uint32_t ret = mem_r32(prev + 4);
                     char buf[16]; snprintf(buf, sizeof(buf), " %08X", ret); bt += buf;
                     // Name the distinct ones that fall in the DOL's code.
-                    if (ret >= g_recomp_code_base && ret < g_recomp_code_end && ns < 8) {
+                    if (ret >= g_game.code_base && ret < g_game.code_end && ns < 8) {
                         bool dup = false;
                         for (int k = 0; k < ns; k++) dup |= seen[k] == ret;
                         if (!dup) {

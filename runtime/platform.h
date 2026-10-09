@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <vector>
 
 // ---- virtual memory ----
 // Reserve `size` bytes of address space without committing it. Returns nullptr on failure.
@@ -48,3 +49,20 @@ std::string plat_find_file(const char* dir, const char* suffix);
 struct PlatFile;
 PlatFile* plat_open_read(const char* path);
 bool plat_read_at(PlatFile* f, uint64_t offset, void* dst, uint32_t len);
+
+// The directory of the running executable, without a trailing separator.
+std::string plat_executable_dir();
+
+// A shared library loaded at run time -- the recompiled game, see game_module.h. Null and a
+// reason in `err` if it cannot be loaded.
+void* plat_module_open(const char* path, std::string* err);
+void* plat_module_symbol(void* module, const char* name);
+
+// Runs a program and waits for it. argv[0] is looked up in PATH; its output is appended to
+// `log` when one is given. Returns its exit status, or -1 if it could not be started.
+int plat_run(const std::vector<std::string>& argv, const char* log);
+
+// Where this machine's state for the game lives: saves, the prepared game, texture packs,
+// settings. Null means the working directory, which is right for a development run; a
+// frontend that knows better (an app bundle) sets it before anything uses it.
+extern const char* g_data_dir;

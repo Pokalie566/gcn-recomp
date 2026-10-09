@@ -34,7 +34,10 @@ gcn_add_game(
 ```
 
 That defines the game executable, a headless benchmark (`<name>_bench`) and a compile-only
-`runtime_check` target. With `ANDROID_PACKAGE <id>`, an Android build (the NDK's toolchain
+`runtime_check` target. Neither executable holds any game code, and both build without a
+disc: they load the recompiled game as a module, `<name>_game` (`runtime/game_module.h`),
+which the build makes beside them when it has a disc image, and which they otherwise
+prepare from the player's disc on first run (`runtime/prepare.h`). With `ANDROID_PACKAGE <id>`, an Android build (the NDK's toolchain
 file, `-DGCN_BENCH_ONLY=ON`) also builds the headset app, `lib<name>.so`, which
 `tools/package-apk.ps1` turns into an APK, and `<name>_egl`, the renderer headless on a
 device. A game tells those what it knows -- when to show stereo, how big its world is --

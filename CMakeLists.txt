@@ -74,10 +74,10 @@ function(gcn_add_game)
     if(GAME_ISO)
       message(WARNING "GAME_ISO is set to '${GAME_ISO}' but that file does not exist.")
     endif()
-    message(WARNING
-      "No game image found, so only the `runtime_check` target (compile the runtime, no link) "
-      "is available. Put your own ${G_TITLE} .iso or .ciso in ${G_IMAGE_DIR}/ "
-      "or pass -DGAME_ISO=/path/to/game.iso to build the game. See README.md.")
+    message(STATUS
+      "No game image found: the game builds without its module, and prepares one from the "
+      "disc on first run (runtime/prepare.h). Put your own ${G_TITLE} .iso or .ciso in "
+      "${G_IMAGE_DIR}/ or pass -DGAME_ISO=/path/to/game.iso to build the module here too.")
   endif()
 
   set(GAME_DOL ${CMAKE_BINARY_DIR}/main.dol)
@@ -103,7 +103,10 @@ function(gcn_add_game)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${RECOMP_TOOL_SOURCES} ${GAME_ISO} ${G_SYMBOLS})
     include(${RECOMP_GEN_DIR}/sources.cmake)
 
-    add_library(game_recomp STATIC ${RECOMP_SOURCES})
+    # Objects, built position-independent: they become the module the runtime loads
+    # (runtime/game_module.h), and the Android app links them statically.
+    add_library(game_recomp OBJECT ${RECOMP_SOURCES})
+    set_target_properties(game_recomp PROPERTIES POSITION_INDEPENDENT_CODE ON)
     _gcn_set_standards(game_recomp)
     target_include_directories(game_recomp PUBLIC ${RT} ${RECOMP_GEN_DIR})
     # PUBLIC because the CPU struct grows with the call trace: the runtime and the
@@ -118,6 +121,17 @@ function(gcn_add_game)
     else()
       target_compile_options(game_recomp PRIVATE -O2 -fno-strict-aliasing -Wno-unused-label -Wno-unused-variable
                              -Wno-parentheses-equality -ffp-contract=off)
+    endif()
+
+    # The game's code as a module beside the executable, for a development run. An app
+    # ships without it and prepares one on the player's machine (runtime/prepare.h); the
+    # flags there must stay the ones above.
+    add_library(${G_NAME}_game MODULE $<TARGET_OBJECTS:game_recomp>)
+    set_target_properties(${G_NAME}_game PROPERTIES PREFIX "" LINKER_LANGUAGE C
+                          LIBRARY_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR})
+    if(APPLE)
+      set_target_properties(${G_NAME}_game PROPERTIES SUFFIX ".dylib")
+      target_link_options(${G_NAME}_game PRIVATE -undefined dynamic_lookup)
     endif()
   endif()
 
@@ -206,35 +220,45 @@ function(gcn_add_game)
     GCN_DEFAULT_ISO="${GAME_ISO}"
     GCN_GAME_TITLE="${G_TITLE}"
     GCN_DISC_ID="${G_DISC_ID}"
-    GCN_GAME_FPS=${G_FPS})
+    GCN_GAME_FPS=${G_FPS}
+    GCN_GAME_NAME="${G_NAME}"
+    GCN_DOL_SHA1="${G_DOL_SHA1}"
+    # What preparing the game on a player's machine uses (runtime/prepare.h), from the
+    # source tree; an app points GCN_RESOURCES at its own copy.
+    GCN_RES_RECOMP="${GCN_RECOMP_DIR}/recomp"
+    GCN_RES_TABLES="${G_TABLES}"
+    GCN_RES_SYMBOLS="${G_SYMBOLS}"
+    GCN_RES_INCLUDE="${RT}")
+  # The CPU struct grows with the call trace: the runtime here and the module -- built by
+  # game_recomp, or by prepare.cpp, which passes it on -- must agree on the layout.
+  if(GCN_TRACE_CALLS)
+    list(APPEND GCN_GAME_DEFS GCN_TRACE_CALLS)
+  endif()
   if(GCN_GUEST_CHECKS)
     list(APPEND GCN_GAME_DEFS GCN_GUEST_CHECKS)
   endif()
 
   # Headless benchmark: reports how fast the guest advances, with no graphics or audio
   # in the way. Used to compare host CPUs.
-  if(HAVE_GAME_ISO)
-    add_executable(${G_NAME}_bench ${BENCH_SOURCES})
-    _gcn_set_standards(${G_NAME}_bench)
-    target_include_directories(${G_NAME}_bench PRIVATE ${RT} ${RECOMP_GEN_DIR})
-    target_link_libraries(${G_NAME}_bench PRIVATE game_recomp)
-    target_compile_options(${G_NAME}_bench PRIVATE ${GCN_RUNTIME_WARNINGS})
-    target_compile_definitions(${G_NAME}_bench PRIVATE ${GCN_GAME_DEFS})
-    if(WIN32)
-      target_link_libraries(${G_NAME}_bench PRIVATE dbghelp)
-    endif()
+  # Like the game, it holds no game code: it loads the module (runtime/game_module.h).
+  add_executable(${G_NAME}_bench ${BENCH_SOURCES})
+  _gcn_set_standards(${G_NAME}_bench)
+  target_include_directories(${G_NAME}_bench PRIVATE ${RT} ${RECOMP_GEN_DIR})
+  target_link_libraries(${G_NAME}_bench PRIVATE ${CMAKE_DL_LIBS})
+  set_target_properties(${G_NAME}_bench PROPERTIES ENABLE_EXPORTS ON)
+  if(TARGET ${G_NAME}_game)
+    add_dependencies(${G_NAME}_bench ${G_NAME}_game)
+  endif()
+  target_compile_options(${G_NAME}_bench PRIVATE ${GCN_RUNTIME_WARNINGS})
+  target_compile_definitions(${G_NAME}_bench PRIVATE ${GCN_GAME_DEFS})
+  if(WIN32)
+    target_link_libraries(${G_NAME}_bench PRIVATE dbghelp)
   endif()
 
-  # Compile-only target: available even without a disc image, so the runtime and any
-  # port work can be checked on its own. With an image present the game target already
-  # compiles these sources, so keep it out of the default build; `ninja runtime_check`
-  # still works.
+  # Compile-only target: the runtime on its own, without linking. The game target already
+  # compiles these sources, so it stays out of the default build; `ninja runtime_check`.
   if(NOT GCN_BENCH_ONLY)
-    if(HAVE_GAME_ISO)
-      add_library(runtime_check OBJECT EXCLUDE_FROM_ALL ${RUNTIME_SOURCES})
-    else()
-      add_library(runtime_check OBJECT ${RUNTIME_SOURCES})
-    endif()
+    add_library(runtime_check OBJECT EXCLUDE_FROM_ALL ${RUNTIME_SOURCES})
     _gcn_set_standards(runtime_check)
     target_include_directories(runtime_check PRIVATE ${RT} ${RECOMP_GEN_DIR} ${GLAD_INCLUDE_DIR})
     target_link_libraries(runtime_check PRIVATE ${GCN_SDL_TARGET})
@@ -242,11 +266,18 @@ function(gcn_add_game)
     target_compile_definitions(runtime_check PRIVATE ${GCN_GAME_DEFS} ${GCN_GL_DEFS})
   endif()
 
-  if(HAVE_GAME_ISO AND NOT GCN_BENCH_ONLY)
+  # The game: the runtime and the game project's code, with no game code of its own -- that
+  # is a module it loads (runtime/game_module.h) -- so it builds without a disc image. Its
+  # symbols are exported for the module to call.
+  if(NOT GCN_BENCH_ONLY)
     add_executable(${G_NAME} ${RUNTIME_SOURCES} ${G_SOURCES})
     _gcn_set_standards(${G_NAME})
-    target_include_directories(${G_NAME} PRIVATE ${GLAD_INCLUDE_DIR})
-    target_link_libraries(${G_NAME} PRIVATE game_recomp ${GCN_SDL_TARGET} ${GCN_PLATFORM_LIBS})
+    target_include_directories(${G_NAME} PRIVATE ${RT} ${GLAD_INCLUDE_DIR})
+    target_link_libraries(${G_NAME} PRIVATE ${GCN_SDL_TARGET} ${GCN_PLATFORM_LIBS} ${CMAKE_DL_LIBS})
+    set_target_properties(${G_NAME} PROPERTIES ENABLE_EXPORTS ON)
+    if(TARGET ${G_NAME}_game)
+      add_dependencies(${G_NAME} ${G_NAME}_game)
+    endif()
     target_compile_options(${G_NAME} PRIVATE ${GCN_RUNTIME_WARNINGS})
     target_compile_definitions(${G_NAME} PRIVATE ${GCN_GAME_DEFS} ${GCN_GL_DEFS})
   endif()
@@ -262,7 +293,7 @@ function(gcn_add_game)
       ${RT}/gx/render_gl.cpp ${RT}/gx/shadergen.cpp ${RT}/gx/gl_load.cpp ${RT}/png.cpp
       ${GLAD_SOURCE} ${G_SOURCES})
     list(REMOVE_ITEM ANDROID_SOURCES ${RT}/audio_stub.cpp)
-    set(ANDROID_DEFS ${GCN_GAME_DEFS} ${GCN_GL_DEFS} GCN_LOG_TAG="${G_NAME}")
+    set(ANDROID_DEFS ${GCN_GAME_DEFS} ${GCN_GL_DEFS} GCN_LOG_TAG="${G_NAME}" GCN_STATIC_GAME)
 
     # Headless EGL frontend: the real renderer, offscreen, writing frames as PNGs. Not an
     # APK: it validates the GL ES renderer on a device over adb, and shows the stereo path

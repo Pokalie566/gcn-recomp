@@ -1,0 +1,36 @@
+// The recompiled game, as a module the runtime loads at startup.
+//
+// The executable holds the runtime and the game project's own code, and nothing translated
+// from the game: that is what lets it be handed to anyone. The game's code is a shared
+// library built from the player's own disc -- by prepare.h on their machine, or by CMake
+// beside the executable in a development build -- and loaded here.
+//
+// The runtime reads five things from it: the four recomp.py writes to recomp_table.c (the
+// function table, its length and the bounds of the code it covers) and the original body of
+// OSSaveContext, which its replacement calls (threads.cpp). Everything else goes the
+// other way: the module calls the runtime (and the game project's hle_* functions) by name,
+// resolved against the executable when it is loaded, which is why the executable exports
+// its symbols.
+//
+// A build that links the generated code statically (the Android app) defines
+// GCN_STATIC_GAME and never loads anything.
+#pragma once
+#include "recomp.h"
+#include <string>
+
+struct GameModule {
+    const RecompFunc* funcs = nullptr;
+    uint32_t count = 0, code_base = 0, code_end = 0;
+    RecompFn orig_OSSaveContext = nullptr;
+};
+extern GameModule g_game;
+
+// The module's file name: <game>_game.dylib, .so or .dll.
+std::string game_module_filename();
+
+// Loads `path` as the game. False, with the reason, if it is missing or not a game module.
+bool game_module_load(const std::string& path, std::string* err);
+
+// Which module to load when nothing else says: GCN_GAME_MODULE, else a development build's
+// beside the executable, else `prepared` if it exists. Empty when there is none.
+std::string game_module_find(const std::string& prepared);
