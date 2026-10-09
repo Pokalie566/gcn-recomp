@@ -7,6 +7,8 @@
 #include "render_gl.h"
 #include "shadergen.h"
 #include "gl.h"
+#include "interp.h"
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <unordered_map>
@@ -1360,6 +1362,10 @@ static bool draw_is_partial_2d(const Batch& b, const Cmd& c) {
 const char* g_dump_dir = nullptr;
 int g_dump_every = 0;
 static uint32_t g_present_count;
+// The frame being presented is an interpolated one (render_execute_interpolated): it is
+// not one of the game's frames, so it does not count as one, and a dump of it is named
+// after the game frame it leads into.
+static bool g_presenting_interp;
 
 static void dump_efb(const EfbCopyCmd& c) {
     int w = px_x(c.src_x + c.src_w) - px_x(c.src_x), h = px_y(c.src_h);
@@ -1371,7 +1377,10 @@ static void dump_efb(const EfbCopyCmd& c) {
         for (int x = 0; x < w; x++) flipped[((size_t)y * w + x) * 4 + 3] = 255;
     }
     char path[512];
-    snprintf(path, sizeof(path), "%s/frame_%05u.png", g_dump_dir, g_present_count);
+    if (g_presenting_interp)
+        snprintf(path, sizeof(path), "%s/frame_%05u_i.png", g_dump_dir, g_present_count + 1);
+    else
+        snprintf(path, sizeof(path), "%s/frame_%05u.png", g_dump_dir, g_present_count);
     write_png(path, flipped.data(), w, h);
 }
 
@@ -1411,7 +1420,8 @@ static void blit_to_output(const EfbCopyCmd& c, GLuint src_tex) {
 }
 
 static void present(const EfbCopyCmd& c) {
-    g_present_count++;
+    if (!g_presenting_interp) g_present_count++;
+    const uint32_t numbered = g_present_count + (g_presenting_interp ? 1 : 0);
     // GCN_DUMP_RANGE=a-b restricts dumping to a window of presented frames, so a short
     // stretch can be captured every single frame. Flicker is only visible frame by frame.
     static int range_lo = -1, range_hi = -1;
@@ -1424,9 +1434,8 @@ static void present(const EfbCopyCmd& c) {
             range_hi = dash ? atoi(dash + 1) : range_lo;
         }
     }
-    const bool in_range = range_lo < 0 || ((int)g_present_count >= range_lo &&
-                                           (int)g_present_count <= range_hi);
-    if (g_dump_dir && g_dump_every && in_range && g_present_count % g_dump_every == 0) dump_efb(c);
+    const bool in_range = range_lo < 0 || ((int)numbered >= range_lo && (int)numbered <= range_hi);
+    if (g_dump_dir && g_dump_every && in_range && numbered % g_dump_every == 0) dump_efb(c);
     blit_to_output(c, g_efb_color);
 }
 
@@ -1964,8 +1973,12 @@ static void evict_textures() {
 // scanout is skipped but everything else -- including every render-to-texture copy -- still
 // happens, which is how the stereo path obtains the textures its eye passes sample.
 static bool execute_batch(Batch& b, bool do_present) {
-    g_render_frame++;
-    evict_textures();
+    // An interpolated frame is not one of the game's: counted, it would age textures twice
+    // as fast as the guest-side cache does, and evict one a draw still names.
+    if (!g_presenting_interp) {
+        g_render_frame++;
+        evict_textures();
+    }
     const auto t_start = std::chrono::steady_clock::now();
     for (auto& t : b.new_textures) upload_texture(*t);
     const double ms_tex = g_frametime ? ms_since(t_start) : 0.0;
@@ -2194,6 +2207,26 @@ static bool execute_batch(Batch& b, bool do_present) {
 bool render_execute(Batch& b) {
     g_hide.clear();   // the flat view shows everything, whatever the eyes leave out
     return execute_batch(b, true);
+}
+
+bool render_execute_interpolated(Batch& cur, const Batch& prev) {
+    Batch mid;
+    InterpStats st{};
+    const bool blend = interp_build_midframe(cur, prev, mid, &st);
+    // GCN_INTERPLOG=1: per frame, how many draws matched and moved far, and whether an
+    // in-between frame was drawn -- what to look at when one is missing or wrong.
+    static const bool interplog = getenv("GCN_INTERPLOG") != nullptr;
+    if (interplog)
+        fprintf(stderr, "[interp] f%u draws=%u matched=%u far=%u -> %s\n", g_present_count + 1, st.draws,
+                st.matched, st.far, blend ? "blend" : "cut");
+    if (!blend) return false;
+    g_hide.clear();
+    g_presenting_interp = true;
+    const bool presented = execute_batch(mid, true);
+    g_presenting_interp = false;
+    // Uploaded by the in-between frame already; the real one reuses them.
+    cur.new_textures.clear();
+    return presented;
 }
 
 }  // namespace gx

@@ -40,6 +40,33 @@ place in the middle 4:3 of the frame.**
 At 4:3 every one of these paths is the identity: `g_wide` is 1 and the frame is the
 same as without the option.
 
+## Frame interpolation (30 fps games at 60)
+
+`--interpolate` (or `GCN_INTERPOLATE=1`) shows a game that runs at 30 fps at 60: between
+two of its frames the frontend draws one more, halfway between them
+(`render_execute_interpolated`), then the real one half a frame later. The game itself is
+untouched -- its logic, physics and timing still run at 30 -- so nothing about it can
+break; the cost is half a frame of added latency.
+
+The in-between frame is built from the two batches (`gx/interp.cpp`, free of GL and tested
+without a GPU). Vertices arrive transformed and lit, so a vertex's position, colours and
+texture coordinates are each set to the midpoint of their values in the two frames, which
+follows the camera, the objects and whatever is projected onto them alike. Each draw is
+matched with the same draw of the previous frame by its shape (primitive, vertex count,
+first texture, first and last position index), the nearest one when several match.
+Unmatched draws are drawn as they are now; a draw that jumped further than its distance
+from the viewer is not moved (a teleport); and a frame where under half of the draws
+match, or over half moved more than a quarter of their distance, is a cut: no in-between
+frame is drawn for it. `interp.h` has the reasoning.
+
+Only a frame that arrives about two refreshes after the previous one (25 to 50 ms) gets an
+in-between: a backlog or a scene the game already runs at 60 goes straight through. An
+in-between frame does not count as a frame for texture ageing, frame dumps or
+`present_count()`; dumped, it is `frame_NNNNN_i.png`, before frame NNNNN.
+`GCN_INTERPOLATE=force` draws one before every frame and never waits, for dumping them
+from an unpaced run; `GCN_INTERPLOG=1` prints, per frame, the draws matched and moved far
+and the verdict.
+
 ## Stereo scaffolding
 
 `gx/render_gl.cpp` and `gx/shadergen.cpp` carry the stereo machinery written for Wave Race:

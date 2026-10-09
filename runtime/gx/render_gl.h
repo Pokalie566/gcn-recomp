@@ -26,6 +26,11 @@ void render_set_output_fbo(unsigned fbo);
 
 bool render_execute(Batch& b);
 
+// Draws and presents a frame halfway between `prev` and `cur` (two consecutive frames of the
+// game), to be shown before `cur` itself: a 30 fps game shown at 60. False -- and nothing
+// drawn -- when the two frames are too different to blend (a cut). See render_gl.cpp.
+bool render_execute_interpolated(Batch& cur, const Batch& prev);
+
 // Frames presented so far, for tracing what a display frame is actually showing.
 uint32_t present_count();
 

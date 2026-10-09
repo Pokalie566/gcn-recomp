@@ -187,6 +187,12 @@ int main(int argc, char** argv) {
     bool headless = false, hidden = false, input_log = true, first_person = false, fast = false;
     std::string input_log_dir, replay_dir;
     int scale = 2;
+    // --interpolate: a game that runs at 30 fps shown at 60, one in-between frame drawn
+    // between two of its frames (gx::render_execute_interpolated). GCN_INTERPOLATE=1 does
+    // the same; GCN_INTERPOLATE=force draws one before every frame and never waits, for
+    // looking at them in frame dumps of an unpaced run.
+    int interpolate = 0;
+    if (const char* ip = getenv("GCN_INTERPOLATE")) interpolate = !strcmp(ip, "force") ? 2 : atoi(ip) != 0;
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--log-all")) for (auto& e : g_log_enabled) e = true;
         else if (!strncmp(argv[i], "--log=", 6)) {
@@ -204,6 +210,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--cull-swap")) gx::g_cull_swap = true;
         else if (!strncmp(argv[i], "--scale=", 8)) scale = atoi(argv[i] + 8);
         else if (!strcmp(argv[i], "--widescreen")) g_widescreen = true;
+        else if (!strcmp(argv[i], "--interpolate")) interpolate = 1;
         else if (!strncmp(argv[i], "--dump-dir=", 11)) gx::g_dump_dir = argv[i] + 11;
         else if (!strncmp(argv[i], "--dump-every=", 13)) gx::g_dump_every = atoi(argv[i] + 13);
         else if (argv[i][0] != '-') iso = argv[i];
@@ -299,6 +306,8 @@ int main(int argc, char** argv) {
     bool running = true;
     uint32_t frames = 0;
     auto t0 = std::chrono::steady_clock::now();
+    std::unique_ptr<gx::Batch> prev;   // the game's previous frame, for --interpolate
+    auto prev_arrival = t0;
     while (running) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
@@ -312,6 +321,7 @@ int main(int argc, char** argv) {
         gx::render_set_window_size(dw, dh);
         auto b = gx::take_batch(4);
         if (!b) continue;
+        const auto arrival = std::chrono::steady_clock::now();
         // GCN_STEREOLOG=1: what the game's stereo hook (vr_game.h) would have a headset
         // show, whenever the answer changes, numbered as the frame dumps are.
         static const bool stereolog = getenv("GCN_STEREOLOG") != nullptr;
@@ -336,6 +346,20 @@ int main(int argc, char** argv) {
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
             glBlitFramebuffer(0, 0, kEyeW, kEyeH, 0, 0, dw, dh, GL_COLOR_BUFFER_BIT, GL_LINEAR);
         } else {
+            if (interpolate && prev) {
+                // Only a frame that lasts about two refreshes has room for one in between. A
+                // backlog arrives with no gap, a 60 fps scene with half of one: both go
+                // straight through.
+                const auto gap = arrival - prev_arrival;
+                const double secs = std::chrono::duration<double>(gap).count();
+                if ((interpolate == 2 || (secs > 0.025 && secs < 0.050)) &&
+                    gx::render_execute_interpolated(*b, *prev)) {
+                    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                    SDL_GL_SwapWindow(win);
+                    frames++;
+                    if (interpolate == 1) std::this_thread::sleep_until(arrival + gap / 2);
+                }
+            }
             presented = gx::render_execute(*b);
         }
         if (presented) {
@@ -353,6 +377,7 @@ int main(int argc, char** argv) {
                 t0 = now;
             }
         }
+        if (interpolate) { prev = std::move(b); prev_arrival = arrival; }
     }
     input_log_end();
     threads_request_quit();

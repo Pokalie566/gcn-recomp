@@ -53,6 +53,11 @@ a log.
 presented frame as a PNG. `GCN_DUMP_RANGE=a-b` restricts that to a window of frames.
 `--headless` runs the guest with no renderer at all.
 
+
+With `--interpolate`, an in-between frame is dumped as `frame_NNNNN_i.png`, before frame
+NNNNN; `GCN_INTERPOLATE=force` makes one for every frame of an unpaced run. See
+graphics.md, "Frame interpolation".
+
 ## The eye preview
 
 `--eye` renders through the stereo path into an offscreen target and shows that in the
