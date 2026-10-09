@@ -42,7 +42,8 @@ by hand; `frame` is for the reader.
 ## Scripted input
 
 `GCN_INPUT="frame:BUTTON:duration,..."` presses buttons at given submitted-frame counts; `+`
-joins buttons (`A+B`), and `SL SR SU SD` push the control stick. Presses are counted in
+joins buttons (`A+B`), `SL SR SU SD` push the control stick and `CL CR CU CD` the C stick,
+all the way or by the percentage that follows (`CR30`). Presses are counted in
 presented game frames, not wall-clock. `GCN_INPUT_LOG=1` prints each press as it fires. A
 scripted press is recorded in the input log like any other, so a script is one way to make
 a log.
@@ -85,7 +86,8 @@ frame, and `GCN_STEREOLOG=1` prints the game's `wants_stereo` answer whenever it
 The desktop build honours `GCN_STEREOLOG` too, numbering frames as its dumps are, so a
 game's stereo hook can be checked against a replayed route without a device.
 `GCN_RAMSNAP=<dir>` (with `GCN_RAMSNAP_EVERY`, `GCN_RAMSNAP_RANGE=a-b`) writes the low 8 MB
-of guest RAM beside the frames, for finding the state such a hook reads.
+of guest RAM beside the frames, for finding the state such a hook reads. The desktop build
+honours it too, numbering snapshots as its frame dumps are.
 
 The app has no environment of its own, so `gcn_env.txt` in its files directory
 (`/sdcard/Android/data/<package>/files/`), one `KEY=VALUE` per line, is put into it before

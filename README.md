@@ -52,6 +52,26 @@ The game project provides:
 - `recomp/names.txt`, `recomp/patches.txt` — hand-named functions and instruction patches,
   usually empty.
 
+## Playing
+
+`<name> [image.iso]` runs the game; with no path it finds the image the build was
+configured with. Options for the player:
+
+| Option | |
+|---|---|
+| `--widescreen` | a 16:9 frame; the game project widens its camera (docs/graphics.md, *Widescreen*) |
+| `--interpolate` | a 30 fps game shown at 60, an in-between frame drawn between two of its own (*Frame interpolation*) |
+| `--mouse-aim` | the mouse drives the C stick, its buttons the triggers (`runtime/mouse_aim.h`) |
+| `--scale=N` | internal resolution, N times the console's (default 2) |
+
+Keyboard: arrows the control stick, X A, Z B, C X, S Y, D Z, Q L, W R, Enter Start, I J K L
+the d-pad, Escape quits. A controller works as it is plugged in. With `--mouse-aim` the
+cursor is captured; F1 releases it and a click takes it back. `GCN_MOUSE_SENS` scales the
+mouse (1 by default). A game whose C stick needs other settings gives its own defaults at
+compile time on its target -- `GCN_MOUSE_DEADZONE` (the deflection it starts to react at,
+0.15), `GCN_MOUSE_INVERT_Y`, `GCN_MOUSE_Y=0` (vertical motion ignored, the wheel pushes
+the stick's y instead) -- which the environment variables of the same names override.
+
 ## Layout
 
 - `recomp/`: `recomp.py` drives the translation; `ppc.py` turns each instruction into C;

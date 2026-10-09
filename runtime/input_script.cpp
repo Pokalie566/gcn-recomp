@@ -4,11 +4,12 @@
 #include "gx/render.h"
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
 #include <vector>
 
 namespace {
-struct ScriptedPress { uint32_t at, dur; uint16_t buttons; int sx, sy; };
+struct ScriptedPress { uint32_t at, dur; uint16_t buttons; int sx, sy, cx, cy; };
 std::vector<ScriptedPress> g_script;
 bool g_log;
 }  // namespace
@@ -26,7 +27,7 @@ void input_script_init(const char* spec) {
         pos = end + 1;
         size_t c1 = item.find(':'), c2 = item.rfind(':');
         if (c1 == std::string::npos || c2 == c1) continue;
-        ScriptedPress p{(uint32_t)atoi(item.c_str()), (uint32_t)atoi(item.c_str() + c2 + 1), 0, 0, 0};
+        ScriptedPress p{(uint32_t)atoi(item.c_str()), (uint32_t)atoi(item.c_str() + c2 + 1), 0, 0, 0, 0, 0};
         std::string btns = item.substr(c1 + 1, c2 - c1 - 1);
         size_t bp = 0;
         while (bp <= btns.size()) {
@@ -40,8 +41,15 @@ void input_script_init(const char* spec) {
             else if (b == "R") p.buttons |= PAD_R; else if (b == "START") p.buttons |= PAD_START;
             else if (b == "UP") p.buttons |= PAD_UP; else if (b == "DOWN") p.buttons |= PAD_DOWN;
             else if (b == "LEFT") p.buttons |= PAD_LEFT; else if (b == "RIGHT") p.buttons |= PAD_RIGHT;
-            else if (b == "SL") p.sx = -100; else if (b == "SR") p.sx = 100;
-            else if (b == "SU") p.sy = 100; else if (b == "SD") p.sy = -100;
+            else if (b.size() >= 2 && (b[0] == 'S' || b[0] == 'C') && strchr("LRUD", b[1])) {
+                // SL SR SU SD the control stick, CL CR CU CD the C stick; full deflection,
+                // or a percentage after it (CR30), for measuring a game's response curve.
+                const int mag = b.size() > 2 ? atoi(b.c_str() + 2) : 100;
+                const int v = (b[1] == 'L' || b[1] == 'D') ? -mag : mag;
+                int& axis = b[0] == 'S' ? (b[1] == 'L' || b[1] == 'R' ? p.sx : p.sy)
+                                        : (b[1] == 'L' || b[1] == 'R' ? p.cx : p.cy);
+                axis = v;
+            }
         }
         g_script.push_back(p);
     }
@@ -57,6 +65,8 @@ void input_script_apply(PadState& p) {
             p.buttons |= s.buttons;
             if (s.sx) p.stick_x = (uint8_t)(128 + s.sx);
             if (s.sy) p.stick_y = (uint8_t)(128 + s.sy);
+            if (s.cx) p.cstick_x = (uint8_t)(128 + s.cx);
+            if (s.cy) p.cstick_y = (uint8_t)(128 + s.cy);
             if (s.buttons & PAD_L) p.trig_l = 255;
             if (s.buttons & PAD_R) p.trig_r = 255;
         }

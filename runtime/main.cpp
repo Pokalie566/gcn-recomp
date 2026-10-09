@@ -20,6 +20,7 @@
 #include <ctime>
 #include <string>
 #include <thread>
+#include "mouse_aim.h"
 #include <vector>
 
 uint32_t boot_load(const char* iso_path);
@@ -128,6 +129,77 @@ static uint8_t axis_to_u8(int v, bool invert) {
     return (uint8_t)std::clamp(r, 0, 255);
 }
 
+// GCN_RAMSNAP=<dir> writes the low 8 MB of guest RAM every GCN_RAMSNAP_EVERY presented
+// frames (default 150), within GCN_RAMSNAP_RANGE=a-b if set: diffing snapshots taken in
+// known game states is how a game variable gets found. The same as the headset harness's
+// (android/egl_main.cpp). Taken from the render thread, so a snapshot is the guest's state
+// at about that frame, not at an exact instruction.
+static void ram_snapshot(uint32_t frame) {
+    static const char* dir = getenv("GCN_RAMSNAP");
+    if (!dir) return;
+    static const uint32_t every = getenv("GCN_RAMSNAP_EVERY") ? (uint32_t)atoi(getenv("GCN_RAMSNAP_EVERY")) : 150;
+    static int lo = -1, hi = -1;
+    static bool parsed = false;
+    if (!parsed) {
+        parsed = true;
+        plat_make_dirs(dir);
+        if (const char* r = getenv("GCN_RAMSNAP_RANGE")) {
+            lo = atoi(r);
+            const char* dash = strchr(r, '-');
+            hi = dash ? atoi(dash + 1) : lo;
+        }
+    }
+    if (!every || frame % every || (lo >= 0 && ((int)frame < lo || (int)frame > hi))) return;
+    char path[512];
+    snprintf(path, sizeof(path), "%s/ram_%05u.bin", dir, frame);
+    if (FILE* f = fopen(path, "wb")) {
+        fwrite(mem_ptr(0x80000000), 1, 8u << 20, f);
+        fclose(f);
+    }
+}
+
+// --mouse-aim (GCN_MOUSE_AIM=1): the mouse drives the C stick (see mouse_aim.h), its buttons
+// the triggers. The cursor is captured while the window has it; F1 lets it go, a click takes
+// it back. A game whose stick needs other settings sets their defaults at compile time
+// (GCN_MOUSE_DEADZONE, GCN_MOUSE_INVERT_Y, GCN_MOUSE_Y on its target); the environment
+// overrides them, as does GCN_MOUSE_SENS.
+static bool g_mouse_aim;
+static MouseAim g_aim;
+#ifndef GCN_MOUSE_DEADZONE
+#define GCN_MOUSE_DEADZONE 0.15f
+#endif
+#ifndef GCN_MOUSE_INVERT_Y
+#define GCN_MOUSE_INVERT_Y 0
+#endif
+#ifndef GCN_MOUSE_Y
+#define GCN_MOUSE_Y 1
+#endif
+static void mouse_aim_init() {
+    g_aim.deadzone = GCN_MOUSE_DEADZONE;
+    g_aim.invert_y = GCN_MOUSE_INVERT_Y != 0;
+    g_aim.use_y = GCN_MOUSE_Y != 0;
+    if (const char* e = getenv("GCN_MOUSE_Y")) g_aim.use_y = atoi(e) != 0;
+    if (const char* e = getenv("GCN_MOUSE_SENS")) g_aim.sens = (float)atof(e);
+    if (const char* e = getenv("GCN_MOUSE_DEADZONE")) g_aim.deadzone = (float)atof(e);
+    if (const char* e = getenv("GCN_MOUSE_INVERT_Y")) g_aim.invert_y = atoi(e) != 0;
+}
+// The mouse's part of the pad: the C stick while it moves, and the triggers.
+static void mouse_aim_apply(PadState& p) {
+    static auto last = std::chrono::steady_clock::now();
+    const auto now = std::chrono::steady_clock::now();
+    g_aim.update(std::chrono::duration<float>(now - last).count());
+    last = now;
+    if (!SDL_GetRelativeMouseMode()) return;
+    const float cx = g_aim.stick_x(), cy = g_aim.stick_y();
+    if (cx != 0 || cy != 0) {
+        p.cstick_x = (uint8_t)lroundf(128 + 100 * cx);
+        p.cstick_y = (uint8_t)lroundf(128 + 100 * cy);
+    }
+    const uint32_t mb = SDL_GetMouseState(nullptr, nullptr);
+    if (mb & SDL_BUTTON(SDL_BUTTON_LEFT)) { p.buttons |= PAD_R; p.trig_r = 255; }
+    if (mb & SDL_BUTTON(SDL_BUTTON_RIGHT)) { p.buttons |= PAD_L; p.trig_l = 255; }
+}
+
 static void update_pad() {
     PadState p;
     p.connected = true;
@@ -174,6 +246,7 @@ static void update_pad() {
         if (rt > 1000) { p.trig_r = (uint8_t)(rt * 255 / 32767); if (rt > 30000) p.buttons |= PAD_R; }
     }
     input_script_apply(p);
+    if (g_mouse_aim) mouse_aim_apply(p);
     pad_set_state(0, p);
 }
 
@@ -211,6 +284,7 @@ int main(int argc, char** argv) {
         else if (!strncmp(argv[i], "--scale=", 8)) scale = atoi(argv[i] + 8);
         else if (!strcmp(argv[i], "--widescreen")) g_widescreen = true;
         else if (!strcmp(argv[i], "--interpolate")) interpolate = 1;
+        else if (!strcmp(argv[i], "--mouse-aim")) g_mouse_aim = true;
         else if (!strncmp(argv[i], "--dump-dir=", 11)) gx::g_dump_dir = argv[i] + 11;
         else if (!strncmp(argv[i], "--dump-every=", 13)) gx::g_dump_every = atoi(argv[i] + 13);
         else if (argv[i][0] != '-') iso = argv[i];
@@ -299,6 +373,11 @@ int main(int argc, char** argv) {
     if (gx::g_dump_dir) plat_make_dirs(gx::g_dump_dir);
 
     audio_open();
+    if (const char* ma = getenv("GCN_MOUSE_AIM")) g_mouse_aim |= atoi(ma) != 0;
+    if (g_mouse_aim) {
+        mouse_aim_init();
+        if (!hidden) SDL_SetRelativeMouseMode(SDL_TRUE);
+    }
 
     uint32_t entry = boot_load(iso);
     threads_start_boot(entry);
@@ -314,6 +393,14 @@ int main(int argc, char** argv) {
             if (e.type == SDL_QUIT) running = false;
             else if (e.type == SDL_CONTROLLERDEVICEADDED && !g_ctrl) g_ctrl = SDL_GameControllerOpen(e.cdevice.which);
             else if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_ESCAPE) running = false;
+            else if (g_mouse_aim && e.type == SDL_MOUSEMOTION && SDL_GetRelativeMouseMode())
+                g_aim.move((float)e.motion.xrel, (float)e.motion.yrel);
+            else if (g_mouse_aim && e.type == SDL_MOUSEWHEEL && SDL_GetRelativeMouseMode())
+                g_aim.wheel(e.wheel.direction == SDL_MOUSEWHEEL_FLIPPED ? -e.wheel.y : e.wheel.y);
+            else if (g_mouse_aim && e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_F1)
+                SDL_SetRelativeMouseMode(SDL_GetRelativeMouseMode() ? SDL_FALSE : SDL_TRUE);
+            else if (g_mouse_aim && e.type == SDL_MOUSEBUTTONDOWN && !SDL_GetRelativeMouseMode())
+                SDL_SetRelativeMouseMode(SDL_TRUE);
         }
         update_pad();
         int dw, dh;
@@ -377,6 +464,7 @@ int main(int argc, char** argv) {
                 t0 = now;
             }
         }
+        if (presented) ram_snapshot(gx::present_count());
         if (interpolate) { prev = std::move(b); prev_arrival = arrival; }
     }
     input_log_end();
