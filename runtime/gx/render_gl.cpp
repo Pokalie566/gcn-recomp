@@ -457,6 +457,15 @@ void main() {
 )";
 
 // Converts EFB color (or depth) to the requested GX copy format. Output row 0 = top.
+//
+// Follows Dolphin's TextureConverterShaderGen, which was checked against hardware: the
+// pixel as bytes (depth as its 24-bit integer, high byte first, with no alpha), the YUV
+// conversion for intensity formats, then each format's channels and precision. The
+// channels matter because the game samples the copy as some texture format of its own: a
+// depth copy to RG8 is read as IA8, the high byte as intensity and the middle byte as
+// alpha. Luigi's Mansion projects its shadows that way, and with the bytes in the wrong
+// channels they came out as contour lines -- a low byte, which wraps every few units of
+// depth, standing in for the middle one.
 static const char* kCopyFS = GCN_GLSL_VERSION R"(
 in vec2 v_uv;
 uniform sampler2D u_src;
@@ -465,27 +474,37 @@ uniform int u_mode;   // copy texture format (+16 intensity, +32 depth)
 out vec4 o;
 void main() {
     vec2 uv = vec2(v_uv.x, 1.0 - v_uv.y);
-    vec4 c = texture(u_src, uv);
+    uvec4 raw;
     if ((u_mode & 32) != 0) {
-        float z = texture(u_depth, uv).r;
-        uint zi = uint(z * 16777215.0);
-        c = vec4(float((zi >> 16) & 255u), float((zi >> 8) & 255u), float(zi & 255u), 255.0) / 255.0;
-        c = vec4(c.r, c.g, c.b, c.r);
+        uint z = min(uint(texture(u_depth, uv).r * 16777216.0), 16777215u);
+        raw = uvec4((z >> 16) & 255u, (z >> 8) & 255u, z & 255u, 255u);
+    } else {
+        raw = uvec4(round(texture(u_src, uv) * 255.0));
     }
-    int fmt = u_mode & 15;
-    bool intensity = (u_mode & 16) != 0;
-    if (intensity) {
-        float y = clamp(dot(c.rgb, vec3(0.257, 0.504, 0.098)) + 16.0 / 255.0, 0.0, 1.0);
-        c.rgb = vec3(y);
+    if ((u_mode & 16) != 0) {
+        // Intensity/YUV, with the constants measured on hardware; rounds .5 up.
+        vec4 px = vec4(vec3(raw.rgb), 256.0);
+        uvec3 yuv = uvec3(dot(vec4(66.0, 129.0, 25.0, 16.0), px),
+                          dot(vec4(-38.0, -74.0, 112.0, 128.0), px),
+                          dot(vec4(112.0, -94.0, -18.0, 128.0), px));
+        raw.rgb = (yuv >> 8u) + ((yuv >> 7u) & 1u);
     }
-    // Single-channel formats replicate into all components like the texture decoder does.
-    if (fmt == 7) c = vec4(c.a);              // A8
-    else if (fmt == 8) c = vec4(c.r);         // R8
-    else if (fmt == 9) c = vec4(c.g);         // G8
-    else if (fmt == 10) c = vec4(c.b);        // B8
-    else if (fmt == 1 && !intensity) c = vec4(c.r);
-    if (fmt == 4) c.a = 1.0;                  // RGB565
-    o = c;
+    vec4 f = vec4(raw) / 255.0;
+    switch (u_mode & 15) {
+    case 0: o = vec4(float(raw.r & 0xF0u) / 240.0); break;                       // R4
+    case 1: case 8: o = f.rrrr; break;                                           // R8
+    case 2: { vec2 ra = vec2(raw.ra & 0xF0u) / 240.0; o = ra.xxxy; break; }      // RA4
+    case 3: o = f.rrra; break;                                                   // RA8
+    case 4: o = vec4(vec2(raw.rb & 0xF8u).x / 248.0, float(raw.g & 0xFCu) / 252.0,
+                     float(raw.b & 0xF8u) / 248.0, 1.0); break;                  // RGB565
+    case 5: o = vec4(vec3(raw.rgb & 0xF8u) / 248.0, float(raw.a & 0xE0u) / 224.0); break; // RGB5A3
+    case 7: o = f.aaaa; break;                                                   // A8
+    case 9: o = f.gggg; break;                                                   // G8
+    case 10: o = f.bbbb; break;                                                  // B8
+    case 11: o = f.rrrg; break;                                                  // RG8
+    case 12: o = f.gggb; break;                                                  // GB8
+    default: o = f; break;                                                       // RGBA8
+    }
 }
 )";
 
