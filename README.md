@@ -33,8 +33,7 @@ gcn_add_game(
   FPS 60)
 ```
 
-That defines the game executable, a headless benchmark (`<name>_bench`) and a compile-only
-`runtime_check` target. Neither executable holds any game code, and both build without a
+That defines the game executable and a headless benchmark (`<name>_bench`). Neither executable holds any game code, and both build without a
 disc: they load the recompiled game as a module, `<name>_game` (`runtime/game_module.h`),
 which the build makes beside them when it has a disc image, and which they otherwise
 prepare from the player's disc on first run (`runtime/prepare.h`). With `ANDROID_PACKAGE <id>`, an Android build (the NDK's toolchain

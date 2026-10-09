@@ -255,17 +255,6 @@ function(gcn_add_game)
     target_link_libraries(${G_NAME}_bench PRIVATE dbghelp)
   endif()
 
-  # Compile-only target: the runtime on its own, without linking. The game target already
-  # compiles these sources, so it stays out of the default build; `ninja runtime_check`.
-  if(NOT GCN_BENCH_ONLY)
-    add_library(runtime_check OBJECT EXCLUDE_FROM_ALL ${RUNTIME_SOURCES})
-    _gcn_set_standards(runtime_check)
-    target_include_directories(runtime_check PRIVATE ${RT} ${RECOMP_GEN_DIR} ${GLAD_INCLUDE_DIR})
-    target_link_libraries(runtime_check PRIVATE ${GCN_SDL_TARGET})
-    target_compile_options(runtime_check PRIVATE ${GCN_RUNTIME_WARNINGS})
-    target_compile_definitions(runtime_check PRIVATE ${GCN_GAME_DEFS} ${GCN_GL_DEFS})
-  endif()
-
   # The game: the runtime and the game project's code, with no game code of its own -- that
   # is a module it loads (runtime/game_module.h) -- so it builds without a disc image. Its
   # symbols are exported for the module to call.
