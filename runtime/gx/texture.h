@@ -31,6 +31,7 @@ void texture_invalidate_efb_copy(uint32_t addr);
 
 // Drop decoded textures the game has stopped referencing. Call once per frame.
 void texture_evict();
+void texture_cache_clear();
 void tlut_load(uint32_t src_addr, uint32_t tmem_off, uint32_t bytes);
 uint32_t texture_size_bytes(uint32_t fmt, uint32_t w, uint32_t h);
 

@@ -11,7 +11,7 @@
 // table, the runtime headers the generated code includes. What it needs from the machine is
 // a C compiler and python3 -- on macOS, Apple's Command Line Tools.
 //
-// The result lives in <data>/game/<dol sha1>-<inputs>/, the second half a hash of everything
+// The result lives in game/<dol sha1>-<inputs>/ under save_path, the second half a hash of everything
 // that went into it, so that an app update that changes the tables prepares again.
 #pragma once
 #include <functional>

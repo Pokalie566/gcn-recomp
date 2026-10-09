@@ -29,3 +29,9 @@ bool audio_open() {
     SDL_PauseAudioDevice(g_dev, 0);
     return true;
 }
+
+// While the game is paused: what is buffered waits for it, and the streamed music (DTK),
+// which the device pulls from the disc on its own, stops with it.
+void audio_set_paused(bool paused) {
+    if (g_dev) SDL_PauseAudioDevice(g_dev, paused ? 1 : 0);
+}

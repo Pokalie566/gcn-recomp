@@ -411,8 +411,6 @@ int plat_run(const std::vector<std::string>& argv, const char* log) {
 // ===========================================================================
 // Shared
 // ===========================================================================
-const char* g_data_dir;
-
 void plat_make_dirs(const std::string& path) {
     if (path.empty()) return;
     std::error_code ec;

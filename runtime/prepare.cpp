@@ -100,11 +100,9 @@ static std::string inputs_hash() {
     return h.hex();
 }
 
-static std::string data_root() { return g_data_dir ? std::string(g_data_dir) : std::string("."); }
-
 std::string prepare_module_path(const std::string& dol_sha1) {
-    return data_root() + "/game/" + dol_sha1.substr(0, 12) + "-" + inputs_hash().substr(0, 12) + "/" +
-           game_module_filename();
+    return save_path("game/" + dol_sha1.substr(0, 12) + "-" + inputs_hash().substr(0, 12) + "/" +
+                     game_module_filename());
 }
 
 bool prepare_tools_present(std::string* missing) {

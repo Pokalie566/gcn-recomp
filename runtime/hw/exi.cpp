@@ -146,9 +146,7 @@ const char* g_memcard_path;
 
 void exi_init() {
     sram_init();
-    const std::string path = g_memcard_path ? std::string(g_memcard_path)
-                           : g_save_dir ? std::string(g_save_dir) + "/memcard_a.raw"
-                                        : std::string("saves/memcard_a.raw");
+    const std::string path = g_memcard_path ? std::string(g_memcard_path) : save_path("memcard_a.raw");
     g_card_a = std::make_unique<MemCard>(path, 4);
 }
 

@@ -21,8 +21,10 @@
 #include <string>
 #include <thread>
 #include "mouse_aim.h"
+#include "gx/texture.h"
 #include "gx/texture_pack.h"
 #include "prepare.h"
+#include "settings.h"
 #include <vector>
 
 uint32_t boot_load(const char* iso_path);
@@ -118,17 +120,59 @@ static void on_fault(const void* fault_addr, int code) {
 }
 
 bool audio_open();
+void audio_set_volume(float v);
+void audio_set_paused(bool paused);
 
 // ---------------------------------------------------------------------------
-// Input: keyboard + first game controller -> GC pad 1
+// Input: keyboard + first game controller -> GC pad 1, through the player's bindings
+// (bindings.h), which name their inputs; here the names become SDL's codes.
 // ---------------------------------------------------------------------------
 static SDL_GameController* g_ctrl;
 
-static uint8_t axis_to_u8(int v, bool invert) {
-    float f = v / 32767.0f;
-    if (invert) f = -f;
-    int r = 128 + (int)(f * 100.0f);
-    return (uint8_t)std::clamp(r, 0, 255);
+struct BoundInput {
+    enum Kind { KEY, BUTTON, AXIS } kind;
+    int code;
+    int sign;   // the half of an axis
+};
+static std::vector<BoundInput> g_bound[ACT_COUNT];
+
+static void bindings_resolve(const Bindings& b) {
+    for (int a = 0; a < ACT_COUNT; a++) {
+        g_bound[a].clear();
+        for (const std::string& in : b.inputs[a]) {
+            BoundInput r{BoundInput::KEY, -1, 1};
+            if (!in.compare(0, 4, "key:")) {
+                const SDL_Scancode k = SDL_GetScancodeFromName(in.c_str() + 4);
+                if (k != SDL_SCANCODE_UNKNOWN) r = {BoundInput::KEY, k, 1};
+            } else if (!in.compare(0, 4, "pad:")) {
+                const SDL_GameControllerButton k = SDL_GameControllerGetButtonFromString(in.c_str() + 4);
+                if (k != SDL_CONTROLLER_BUTTON_INVALID) r = {BoundInput::BUTTON, k, 1};
+            } else if (!in.compare(0, 5, "axis:") && in.size() > 6 && (in[5] == '+' || in[5] == '-')) {
+                const SDL_GameControllerAxis k = SDL_GameControllerGetAxisFromString(in.c_str() + 6);
+                if (k != SDL_CONTROLLER_AXIS_INVALID) r = {BoundInput::AXIS, k, in[5] == '+' ? 1 : -1};
+            }
+            if (r.code >= 0) g_bound[a].push_back(r);
+            else fprintf(stderr, "settings: bind.%s: no such input \"%s\"\n", kPadActionNames[a], in.c_str());
+        }
+    }
+}
+
+// How far an input is pushed, 0 to 1.
+static float read_input(const BoundInput& r, const uint8_t* keys) {
+    switch (r.kind) {
+    case BoundInput::KEY:
+        return keys[r.code] ? 1.0f : 0.0f;
+    case BoundInput::BUTTON:
+        return g_ctrl && SDL_GameControllerGetButton(g_ctrl, (SDL_GameControllerButton)r.code) ? 1.0f : 0.0f;
+    case BoundInput::AXIS: {
+        if (!g_ctrl) return 0.0f;
+        // A stick at rest is never quite centred; a trigger at rest is.
+        const bool trigger = r.code == SDL_CONTROLLER_AXIS_TRIGGERLEFT || r.code == SDL_CONTROLLER_AXIS_TRIGGERRIGHT;
+        const float v = (float)r.sign * SDL_GameControllerGetAxis(g_ctrl, (SDL_GameControllerAxis)r.code) / 32767.0f;
+        return v > (trigger ? 0.03f : 0.12f) ? std::min(v, 1.0f) : 0.0f;
+    }
+    }
+    return 0.0f;
 }
 
 // GCN_RAMSNAP=<dir> writes the low 8 MB of guest RAM every GCN_RAMSNAP_EVERY presented
@@ -160,11 +204,11 @@ static void ram_snapshot(uint32_t frame) {
     }
 }
 
-// --mouse-aim (GCN_MOUSE_AIM=1): the mouse drives the C stick (see mouse_aim.h), its buttons
-// the triggers. The cursor is captured while the window has it; F1 lets it go, a click takes
-// it back. A game whose stick needs other settings sets their defaults at compile time
-// (GCN_MOUSE_DEADZONE, GCN_MOUSE_INVERT_Y, GCN_MOUSE_Y on its target); the environment
-// overrides them, as does GCN_MOUSE_SENS.
+// --mouse-aim (GCN_MOUSE_AIM=1, a setting): the mouse drives the C stick (see mouse_aim.h),
+// its buttons the triggers. The cursor is captured while the window has it; F1 lets it go, a
+// click takes it back. A game whose stick needs other settings sets their defaults at compile
+// time (GCN_MOUSE_DEADZONE, GCN_MOUSE_INVERT_Y, GCN_MOUSE_Y on its target); the environment
+// overrides them. The sensitivity is the player's (mouse_sens).
 static bool g_mouse_aim;
 static MouseAim g_aim;
 #ifndef GCN_MOUSE_DEADZONE
@@ -181,7 +225,6 @@ static void mouse_aim_init() {
     g_aim.invert_y = GCN_MOUSE_INVERT_Y != 0;
     g_aim.use_y = GCN_MOUSE_Y != 0;
     if (const char* e = getenv("GCN_MOUSE_Y")) g_aim.use_y = atoi(e) != 0;
-    if (const char* e = getenv("GCN_MOUSE_SENS")) g_aim.sens = (float)atof(e);
     if (const char* e = getenv("GCN_MOUSE_DEADZONE")) g_aim.deadzone = (float)atof(e);
     if (const char* e = getenv("GCN_MOUSE_INVERT_Y")) g_aim.invert_y = atoi(e) != 0;
 }
@@ -202,72 +245,93 @@ static void mouse_aim_apply(PadState& p) {
     if (mb & SDL_BUTTON(SDL_BUTTON_RIGHT)) { p.buttons |= PAD_L; p.trig_l = 255; }
 }
 
-static void update_pad() {
-    PadState p;
-    p.connected = true;
-    const uint8_t* k = SDL_GetKeyboardState(nullptr);
-    if (k[SDL_SCANCODE_RETURN]) p.buttons |= PAD_START;
-    if (k[SDL_SCANCODE_X]) p.buttons |= PAD_A;
-    if (k[SDL_SCANCODE_Z]) p.buttons |= PAD_B;
-    if (k[SDL_SCANCODE_C]) p.buttons |= PAD_X;
-    if (k[SDL_SCANCODE_S]) p.buttons |= PAD_Y;
-    if (k[SDL_SCANCODE_D]) p.buttons |= PAD_Z;
-    if (k[SDL_SCANCODE_Q]) { p.buttons |= PAD_L; p.trig_l = 255; }
-    if (k[SDL_SCANCODE_W]) { p.buttons |= PAD_R; p.trig_r = 255; }
-    if (k[SDL_SCANCODE_I]) p.buttons |= PAD_UP;
-    if (k[SDL_SCANCODE_K]) p.buttons |= PAD_DOWN;
-    if (k[SDL_SCANCODE_J]) p.buttons |= PAD_LEFT;
-    if (k[SDL_SCANCODE_L]) p.buttons |= PAD_RIGHT;
-    int sx = 0, sy = 0;
-    if (k[SDL_SCANCODE_LEFT]) sx -= 100;
-    if (k[SDL_SCANCODE_RIGHT]) sx += 100;
-    if (k[SDL_SCANCODE_UP]) sy += 100;
-    if (k[SDL_SCANCODE_DOWN]) sy -= 100;
-    p.stick_x = (uint8_t)(128 + sx);
-    p.stick_y = (uint8_t)(128 + sy);
-    if (g_ctrl) {
-        auto b = [&](SDL_GameControllerButton btn) { return SDL_GameControllerGetButton(g_ctrl, btn); };
-        if (b(SDL_CONTROLLER_BUTTON_A)) p.buttons |= PAD_A;
-        if (b(SDL_CONTROLLER_BUTTON_X)) p.buttons |= PAD_B;
-        if (b(SDL_CONTROLLER_BUTTON_B)) p.buttons |= PAD_X;
-        if (b(SDL_CONTROLLER_BUTTON_Y)) p.buttons |= PAD_Y;
-        if (b(SDL_CONTROLLER_BUTTON_START)) p.buttons |= PAD_START;
-        if (b(SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)) p.buttons |= PAD_Z;
-        if (b(SDL_CONTROLLER_BUTTON_DPAD_UP)) p.buttons |= PAD_UP;
-        if (b(SDL_CONTROLLER_BUTTON_DPAD_DOWN)) p.buttons |= PAD_DOWN;
-        if (b(SDL_CONTROLLER_BUTTON_DPAD_LEFT)) p.buttons |= PAD_LEFT;
-        if (b(SDL_CONTROLLER_BUTTON_DPAD_RIGHT)) p.buttons |= PAD_RIGHT;
-        int lx = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_LEFTX);
-        int ly = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_LEFTY);
-        if (abs(lx) > 4000 || abs(ly) > 4000) { p.stick_x = axis_to_u8(lx, false); p.stick_y = axis_to_u8(ly, true); }
-        p.cstick_x = axis_to_u8(SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_RIGHTX), false);
-        p.cstick_y = axis_to_u8(SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_RIGHTY), true);
-        int lt = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_TRIGGERLEFT);
-        int rt = SDL_GameControllerGetAxis(g_ctrl, SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
-        if (lt > 1000) { p.trig_l = (uint8_t)(lt * 255 / 32767); if (lt > 30000) p.buttons |= PAD_L; }
-        if (rt > 1000) { p.trig_r = (uint8_t)(rt * 255 / 32767); if (rt > 30000) p.buttons |= PAD_R; }
+// From a pause until the player has let go of everything, the game sees the pad at rest:
+// whatever was held to resume must not reach it.
+static bool g_hold_neutral;
+
+static bool at_rest(const PadState& p) {
+    return !p.buttons && !p.trig_l && !p.trig_r && p.stick_x == 128 && p.stick_y == 128 &&
+           p.cstick_x == 128 && p.cstick_y == 128;
+}
+
+static void update_pad(bool paused) {
+    const uint8_t* keys = SDL_GetKeyboardState(nullptr);
+    float amount[ACT_COUNT];
+    for (int a = 0; a < ACT_COUNT; a++) {
+        amount[a] = 0.0f;
+        for (const BoundInput& r : g_bound[a]) amount[a] = std::max(amount[a], read_input(r, keys));
     }
+    PadState p = pad_from_actions(amount);
     if (g_mouse_aim) mouse_aim_apply(p);
+    if (paused) g_hold_neutral = true;
+    else if (g_hold_neutral && at_rest(p)) g_hold_neutral = false;
+    if (g_hold_neutral) p = pad_from_actions(std::vector<float>(ACT_COUNT).data());
     pad_set_state(0, p);
 }
 
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Settings: settings.ini's, with the command line over them for this run (settings.h).
+// They apply at startup, then again, whichever changed, when the game resumes from a pause:
+// that is when a change to the file shows, and what a menu will use.
+// ---------------------------------------------------------------------------
+static int g_argc;
+static char** g_argv;
+static Settings g_saved;        // settings.ini's
+static int g_interpolate;       // 0 off, 1 on, 2 GCN_INTERPOLATE=force (see main)
+
+static Settings session_settings() {
+    Settings s = g_saved;
+    settings_from_args(s, g_argc, g_argv);
+    return s;
+}
+
+// All of them with `was` null, at startup, before the guest runs; afterwards only what
+// changed, and only while the guest is stopped (guest_pause), except the window's.
+static void apply_settings(SDL_Window* win, const Settings& s, const Settings* was) {
+    auto changed = [&](auto member) { return !was || s.*member != was->*member; };
+    if (was && changed(&Settings::scale)) gx::render_set_internal_scale(s.scale);
+    if (was && changed(&Settings::widescreen)) gx::render_set_widescreen(s.widescreen);
+    if (changed(&Settings::fullscreen)) SDL_SetWindowFullscreen(win, s.fullscreen ? SDL_WINDOW_FULLSCREEN_DESKTOP : 0);
+    if (changed(&Settings::textures)) {
+        gx::texture_pack_set_enabled(s.textures);
+        if (was) gx::texture_cache_clear();
+    }
+    if (changed(&Settings::bindings)) bindings_resolve(s.bindings);
+    if (was && changed(&Settings::iso)) fprintf(stderr, "settings: the new disc image is for the next start\n");
+    audio_set_volume((float)s.volume / 100.0f);
+    if (g_interpolate != 2) g_interpolate = s.interpolate;
+    g_mouse_aim = s.mouse_aim;
+    g_aim.sens = s.mouse_sens;
+}
+
 int main(int argc, char** argv) {
+    g_argc = argc;
+    g_argv = argv;
+    // GCN_SAVE_DIR=<dir>: this machine's state for the game -- card, settings, shader cache,
+    // the prepared game -- somewhere else than saves/. A scripted run uses an empty one.
+    if (const char* d = getenv("GCN_SAVE_DIR")) g_save_dir = d;
+    const std::string settings_path = save_path("settings.ini");
+    if (!settings_load(settings_path, g_saved)) {
+        plat_make_dirs(save_path(""));
+        settings_save(settings_path, g_saved);   // the defaults, for the player to find
+    }
+    Settings cur = session_settings();
+
     // Default: the image the build was configured with, else the first image in ./rom
     std::string iso_default = GCN_DEFAULT_ISO;
     if (!plat_readable(iso_default.c_str())) iso_default = plat_find_file("rom", ".iso");
     if (iso_default.empty()) iso_default = plat_find_file("rom", ".ciso");
-    const char* iso = iso_default.c_str();
+    const char* iso = cur.iso.empty() ? iso_default.c_str() : cur.iso.c_str();
     bool headless = false, hidden = false, input_log = true, first_person = false, fast = false;
     std::string input_log_dir, replay_dir;
-    int scale = 2;
     // --interpolate: a game that runs at 30 fps shown at 60, one in-between frame drawn
-    // between two of its frames (gx::render_execute_interpolated). GCN_INTERPOLATE=1 does
-    // the same; GCN_INTERPOLATE=force draws one before every frame and never waits, for
-    // looking at them in frame dumps of an unpaced run.
-    int interpolate = 0;
+    // between two of its frames (gx::render_execute_interpolated). GCN_INTERPOLATE=force
+    // draws one before every frame and never waits, for looking at them in frame dumps of an
+    // unpaced run.
+    if (const char* ip = getenv("GCN_INTERPOLATE"); ip && !strcmp(ip, "force")) g_interpolate = 2;
     bool prepare_only = false;   // --prepare: build the game module from the disc, then quit
-    if (const char* ip = getenv("GCN_INTERPOLATE")) interpolate = !strcmp(ip, "force") ? 2 : atoi(ip) != 0;
+    // The settings' own options are settings_from_args's.
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--log-all")) for (auto& e : g_log_enabled) e = true;
         else if (!strncmp(argv[i], "--log=", 6)) {
@@ -283,15 +347,10 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--hidden")) hidden = true;
         else if (!strcmp(argv[i], "--fast")) fast = true;
         else if (!strcmp(argv[i], "--cull-swap")) gx::g_cull_swap = true;
-        else if (!strncmp(argv[i], "--scale=", 8)) scale = atoi(argv[i] + 8);
-        else if (!strcmp(argv[i], "--widescreen")) g_widescreen = true;
-        else if (!strcmp(argv[i], "--interpolate")) interpolate = 1;
-        else if (!strcmp(argv[i], "--mouse-aim")) g_mouse_aim = true;
         else if (!strcmp(argv[i], "--dump-textures")) gx::texture_pack_enable_dump();
         else if (!strcmp(argv[i], "--prepare")) prepare_only = true;
         else if (!strncmp(argv[i], "--dump-dir=", 11)) gx::g_dump_dir = argv[i] + 11;
         else if (!strncmp(argv[i], "--dump-every=", 13)) gx::g_dump_every = atoi(argv[i] + 13);
-        else if (argv[i][0] != '-') iso = argv[i];
     }
     plat_install_crash_handlers(on_interrupt, on_fault);
 
@@ -328,9 +387,9 @@ int main(int argc, char** argv) {
             char stamp[64];
             time_t now = time(nullptr);
             strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", localtime(&now));
-            input_log_dir = std::string("saves/inputs/") + stamp;
+            input_log_dir = save_path(std::string("inputs/") + stamp);
         }
-        input_log_start(input_log_dir, replay_card.empty() ? "saves/memcard_a.raw" : replay_card);
+        input_log_start(input_log_dir, replay_card.empty() ? save_path("memcard_a.raw") : replay_card);
     }
 
     if (headless) {
@@ -354,7 +413,7 @@ int main(int argc, char** argv) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
-    if (const char* ws = getenv("GCN_WIDESCREEN")) g_widescreen |= atoi(ws) != 0;
+    g_widescreen = cur.widescreen;
     SDL_Window* win = SDL_CreateWindow(GCN_GAME_TITLE " (recompiled)", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
                                        g_widescreen ? 1706 : 1280, 960, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI |
                                        (hidden ? SDL_WINDOW_HIDDEN : 0));
@@ -377,22 +436,48 @@ int main(int argc, char** argv) {
     }
     LOG(LOG_GX, "GL: %s / %s", glGetString(GL_RENDERER), glGetString(GL_VERSION));
     // Beside the memory card: both are state this machine accumulates for this game.
-    plat_make_dirs("saves");
-    gx::render_set_shader_cache("saves/shaders.bin");
-    gx::render_init(scale);
+    plat_make_dirs(save_path(""));
+    gx::render_set_shader_cache(save_path("shaders.bin").c_str());
+    gx::render_init(cur.scale);
     if (g_eye_mode) eye_init();
     if (first_person) gx::render_set_first_person(true);
     if (gx::g_dump_dir) plat_make_dirs(gx::g_dump_dir);
 
     audio_open();
-    if (const char* ma = getenv("GCN_MOUSE_AIM")) g_mouse_aim |= atoi(ma) != 0;
-    if (g_mouse_aim) {
-        mouse_aim_init();
-        if (!hidden) SDL_SetRelativeMouseMode(SDL_TRUE);
-    }
+    mouse_aim_init();
+    apply_settings(win, cur, nullptr);
+    if (g_mouse_aim && !hidden) SDL_SetRelativeMouseMode(SDL_TRUE);
 
     uint32_t entry = boot_load(iso);
     threads_start_boot(entry);
+
+    // Esc (or a controller's Back) pauses: the guest stops (guest_pause), the last frame
+    // stays on screen, the sound waits. Esc again resumes, once the guest has stopped, with
+    // settings.ini read again. GCN_PAUSE_AT=<frame>[:<ms>] pauses by itself at that presented
+    // frame for that long (default 1000 ms), for checking that a pause changes nothing.
+    bool paused = false;
+    std::chrono::steady_clock::time_point resume_at{};
+    auto pause = [&] {
+        paused = true;
+        guest_pause();
+        audio_set_paused(true);
+        SDL_SetRelativeMouseMode(SDL_FALSE);
+        SDL_SetWindowTitle(win, GCN_GAME_TITLE " (recompiled) - paused (Esc to resume)");
+    };
+    auto resume = [&] {
+        if (!guest_paused()) return;   // still on its way: settings must not change under it
+        settings_load(settings_path, g_saved);
+        const Settings now = session_settings();
+        apply_settings(win, now, &cur);
+        cur = now;
+        paused = false;
+        resume_at = {};
+        if (g_mouse_aim && !hidden) SDL_SetRelativeMouseMode(SDL_TRUE);
+        audio_set_paused(false);
+        guest_resume();
+        SDL_SetWindowTitle(win, GCN_GAME_TITLE " (recompiled)");
+    };
+    const char* pause_at = getenv("GCN_PAUSE_AT");
 
     bool running = true;
     uint32_t frames = 0;
@@ -404,7 +489,18 @@ int main(int argc, char** argv) {
         while (SDL_PollEvent(&e)) {
             if (e.type == SDL_QUIT) running = false;
             else if (e.type == SDL_CONTROLLERDEVICEADDED && !g_ctrl) g_ctrl = SDL_GameControllerOpen(e.cdevice.which);
-            else if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_ESCAPE) running = false;
+            else if ((e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_ESCAPE && !e.key.repeat) ||
+                     (e.type == SDL_CONTROLLERBUTTONDOWN && e.cbutton.button == SDL_CONTROLLER_BUTTON_BACK))
+                paused ? resume() : pause();
+            else if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_F11 && !e.key.repeat) {
+                // Saved, so that it outlasts the next resume's reading of the file.
+                g_saved.fullscreen = !cur.fullscreen;
+                settings_save(settings_path, g_saved);
+                const Settings now = session_settings();
+                apply_settings(win, now, &cur);
+                cur = now;
+            }
+            else if (paused) continue;
             else if (g_mouse_aim && e.type == SDL_MOUSEMOTION && SDL_GetRelativeMouseMode())
                 g_aim.move((float)e.motion.xrel, (float)e.motion.yrel);
             else if (g_mouse_aim && e.type == SDL_MOUSEWHEEL && SDL_GetRelativeMouseMode())
@@ -414,12 +510,24 @@ int main(int argc, char** argv) {
             else if (g_mouse_aim && e.type == SDL_MOUSEBUTTONDOWN && !SDL_GetRelativeMouseMode())
                 SDL_SetRelativeMouseMode(SDL_TRUE);
         }
-        update_pad();
+        update_pad(paused);
         int dw, dh;
         SDL_GL_GetDrawableSize(win, &dw, &dh);
         gx::render_set_window_size(dw, dh);
         auto b = gx::take_batch(4);
-        if (!b) continue;
+        if (!b) {
+            if (paused && guest_paused()) {
+                // Nothing more is coming: the last frame again, at about a display's pace.
+                if (resume_at != std::chrono::steady_clock::time_point{} && std::chrono::steady_clock::now() >= resume_at)
+                    resume();
+                else if (gx::render_present_last()) {
+                    glBindFramebuffer(GL_FRAMEBUFFER, 0);
+                    SDL_GL_SwapWindow(win);
+                }
+                SDL_Delay(12);
+            }
+            continue;
+        }
         const auto arrival = std::chrono::steady_clock::now();
         // GCN_STEREOLOG=1: what the game's stereo hook (vr_game.h) would have a headset
         // show, whenever the answer changes, numbered as the frame dumps are.
@@ -445,18 +553,18 @@ int main(int argc, char** argv) {
             glBindFramebuffer(GL_DRAW_FRAMEBUFFER, 0);
             glBlitFramebuffer(0, 0, kEyeW, kEyeH, 0, 0, dw, dh, GL_COLOR_BUFFER_BIT, GL_LINEAR);
         } else {
-            if (interpolate && prev) {
+            if (g_interpolate && prev) {
                 // Only a frame that lasts about two refreshes has room for one in between. A
                 // backlog arrives with no gap, a 60 fps scene with half of one: both go
                 // straight through.
                 const auto gap = arrival - prev_arrival;
                 const double secs = std::chrono::duration<double>(gap).count();
-                if ((interpolate == 2 || (secs > 0.025 && secs < 0.050)) &&
+                if ((g_interpolate == 2 || (secs > 0.025 && secs < 0.050)) &&
                     gx::render_execute_interpolated(*b, *prev)) {
                     glBindFramebuffer(GL_FRAMEBUFFER, 0);
                     SDL_GL_SwapWindow(win);
                     frames++;
-                    if (interpolate == 1) std::this_thread::sleep_until(arrival + gap / 2);
+                    if (g_interpolate == 1) std::this_thread::sleep_until(arrival + gap / 2);
                 }
             }
             presented = gx::render_execute(*b);
@@ -468,16 +576,21 @@ int main(int argc, char** argv) {
             frames++;
             auto now = std::chrono::steady_clock::now();
             double secs = std::chrono::duration<double>(now - t0).count();
-            if (secs >= 2.0) {
+            if (secs >= 2.0 && !paused) {
                 char title[128];
                 snprintf(title, sizeof(title), GCN_GAME_TITLE " (recompiled) - %.1f fps", frames / secs);
                 SDL_SetWindowTitle(win, title);
                 frames = 0;
                 t0 = now;
             }
+            if (pause_at && !paused && gx::present_count() == (uint32_t)atoi(pause_at)) {
+                const char* ms = strchr(pause_at, ':');
+                pause();
+                resume_at = now + std::chrono::milliseconds(ms ? atoi(ms + 1) : 1000);
+            }
         }
         if (presented) ram_snapshot(gx::present_count());
-        if (interpolate) { prev = std::move(b); prev_arrival = arrival; }
+        if (g_interpolate) { prev = std::move(b); prev_arrival = arrival; }
     }
     input_log_end();
     threads_request_quit();

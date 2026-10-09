@@ -46,6 +46,10 @@ void texture_pack_apply(const TexName& name, TexData& td, uint32_t game_levels);
 // --dump-textures: called by the frontend before the game starts.
 void texture_pack_enable_dump();
 
+// Whether the pack replaces textures (it does by default). Textures already decoded keep
+// what they have until texture_cache_clear.
+void texture_pack_set_enabled(bool on);
+
 // For a renderer that writes the dumps: the directory, or null when not dumping.
 const char* texture_dump_dir();
 

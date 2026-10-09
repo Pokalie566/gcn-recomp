@@ -8,6 +8,8 @@
 #include "runtime.h"
 #include "hw/dtk.h"
 #include <algorithm>
+#include <atomic>
+#include <cmath>
 #include <mutex>
 #include <vector>
 
@@ -97,6 +99,8 @@ static bool dtk_decode_block() {
 
 // ---- Mix one buffer ----
 //
+static std::atomic<float> g_volume{1.0f};   // the player's, applied last
+
 // Called from the backend's device callback, so it runs on an audio thread with a
 // deadline: it takes two short locks and does no allocation beyond the DTK decode's
 // amortised growth.
@@ -172,7 +176,11 @@ void audio_render(int16_t* out, int frames) {
         ai_stream_advance(elapsed);
     }
     audio_wav_capture(out, frames);
+    if (const float v = g_volume; v != 1.0f)
+        for (int i = 0; i < 2 * frames; i++) out[i] = (int16_t)std::clamp((int)lroundf(out[i] * v), -32768, 32767);
 }
+
+void audio_set_volume(float v) { g_volume = std::clamp(v, 0.0f, 1.0f); }
 
 static FILE* g_wav;
 static uint32_t g_wav_bytes;

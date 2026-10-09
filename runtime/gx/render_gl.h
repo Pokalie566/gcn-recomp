@@ -18,7 +18,15 @@ void render_init(int internal_scale);
 // it discards the EFB's contents and every texture an EFB copy has produced.
 void render_set_internal_scale(int scale);
 
+// 16:9 or 4:3, between frames, like render_set_internal_scale. Sets g_widescreen, which the
+// game project reads too: change it only while the guest is stopped (guest_pause).
+void render_set_widescreen(bool on);
+
 void render_set_window_size(int w, int h);
+
+// Shows the frame last presented again, for a frontend whose game is paused: the window
+// still needs drawing (a resize, a menu over it). False before the first frame.
+bool render_present_last();
 
 // Redirect the finished frame somewhere other than the window framebuffer, e.g. a VR
 // swapchain image. 0 restores the default.

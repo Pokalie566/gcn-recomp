@@ -402,6 +402,10 @@ TexLookup texture_lookup(const TexParams& p, std::vector<std::shared_ptr<TexData
 
 void texture_invalidate_efb_copy(uint32_t addr) { g_efb_copies.erase(addr & 0x03FFFFFF); }
 
+// Forget every decoded texture: they are decoded again as the game next uses them, under
+// new ids, which is how a change of texture pack shows. Only while the guest is stopped.
+void texture_cache_clear() { g_cache.clear(); }
+
 // Drop decoded textures the game has stopped referencing. Each entry holds every mip
 // level as RGBA8, so a long race would otherwise accumulate hundreds of megabytes.
 void texture_evict() {

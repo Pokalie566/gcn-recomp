@@ -61,8 +61,3 @@ void* plat_module_symbol(void* module, const char* name);
 // Runs a program and waits for it. argv[0] is looked up in PATH; its output is appended to
 // `log` when one is given. Returns its exit status, or -1 if it could not be started.
 int plat_run(const std::vector<std::string>& argv, const char* log);
-
-// Where this machine's state for the game lives: saves, the prepared game, texture packs,
-// settings. Null means the working directory, which is right for a development run; a
-// frontend that knows better (an app bundle) sets it before anything uses it.
-extern const char* g_data_dir;

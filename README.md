@@ -65,17 +65,25 @@ configured with. Options for the player:
 | `--interpolate` | a 30 fps game shown at 60, an in-between frame drawn between two of its own (*Frame interpolation*) |
 | `--mouse-aim` | the mouse drives the C stick, its buttons the triggers (`runtime/mouse_aim.h`) |
 | `--scale=N` | internal resolution, N times the console's (default 2) |
+| `--fullscreen` | fullscreen; F11 switches |
 | `--dump-textures` | write every texture the game uses to `textures_dump/<game id>/`, named for a pack |
+
+These, the disc image, the volume, whether a texture pack is used and the pad bindings are
+**settings**, kept in `saves/settings.ini` (`runtime/settings.h`), which the first run
+writes with the defaults. An option on the command line overrides its setting for that run
+only. **Esc** (or a controller's Back) pauses: the frame stays on screen, the sound waits,
+and on resuming settings.ini is read again and whatever changed applies at once.
 
 **Texture packs** are Dolphin's: copy a pack's `<game id>` folder (Dolphin's
 `Load/Textures/<game id>`) to `textures/` in the working directory and it is used as it is
 -- same names, same `$` wildcards, any resolution. PNG only for now. `GCN_TEXTURES=<dir>`
 looks elsewhere. See `runtime/gx/texture_pack.h`.
 
-Keyboard: arrows the control stick, X A, Z B, C X, S Y, D Z, Q L, W R, Enter Start, I J K L
-the d-pad, Escape quits. A controller works as it is plugged in. With `--mouse-aim` the
-cursor is captured; F1 releases it and a click takes it back. `GCN_MOUSE_SENS` scales the
-mouse (1 by default). A game whose C stick needs other settings gives its own defaults at
+Keyboard, by default: arrows the control stick, X A, Z B, C X, S Y, D Z, Q L, W R, Enter
+Start, I J K L the d-pad. A controller works as it is plugged in. Both are bound in
+settings.ini, `bind.<action> = key:<SDL key name>, pad:<SDL button>, axis:+<axis>`. With
+`--mouse-aim` the cursor is captured; F1 releases it and a click takes it back. `mouse_sens`
+scales the mouse (1 by default; `GCN_MOUSE_SENS` for a run). A game whose C stick needs other settings gives its own defaults at
 compile time on its target -- `GCN_MOUSE_DEADZONE` (the deflection it starts to react at,
 0.15), `GCN_MOUSE_INVERT_Y`, `GCN_MOUSE_Y=0` (vertical motion ignored, the wheel pushes
 the stick's y instead) -- which the environment variables of the same names override.

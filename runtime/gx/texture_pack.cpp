@@ -102,6 +102,7 @@ TexName texture_name(const uint8_t* data, uint32_t fmt, uint32_t w, uint32_t h, 
 namespace {
 bool g_init;
 bool g_dump;
+bool g_enabled = true;
 std::string g_dump_dir;
 std::unordered_map<std::string, std::string> g_index;   // name -> file
 std::unordered_set<std::string> g_dumped;
@@ -163,16 +164,18 @@ std::vector<uint32_t> halve(const std::vector<uint32_t>& src, uint32_t w, uint32
 
 bool texture_pack_active() {
     init();
-    return g_dump || !g_index.empty();
+    return g_dump || (g_enabled && !g_index.empty());
 }
 
 const char* texture_dump_dir() { return g_dump ? g_dump_dir.c_str() : nullptr; }
 
 void texture_pack_enable_dump() { g_dump = true; }
+void texture_pack_set_enabled(bool on) { g_enabled = on; }
 
 void texture_pack_apply(const TexName& n, TexData& td, uint32_t game_levels) {
     init();
     auto find = [](const std::string& key) -> const std::string* {
+        if (!g_enabled) return nullptr;
         auto it = g_index.find(key);
         return it == g_index.end() ? nullptr : &it->second;
     };

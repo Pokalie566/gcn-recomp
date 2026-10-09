@@ -4,11 +4,23 @@ How to drive a game without a controller, record and replay a run, measure the p
 find out which guest code or which draw is responsible for something. Environment variables
 are `GCN_*`; none of this is needed to play.
 
+## State, settings and pausing
+
+`GCN_SAVE_DIR=<dir>` keeps this machine's state for the game somewhere else than `saves/`:
+memory card, settings.ini, shader cache, input logs, the prepared game. A scripted run
+points it at an empty directory, so that it neither reads the player's settings nor touches
+their card.
+
+`GCN_PAUSE_AT=<frame>[:<ms>]` pauses at that presented frame for that long (1000 ms by
+default), as Esc would, then resumes. A run paused that way must play out exactly as one
+that is not: the guest stops at an interrupt poll, the virtual clock with it, and the time
+paused is not caught up (`guest_pause` in runtime.h).
+
 ## The game module
 
 The executables load the recompiled game at startup (`runtime/game_module.h`): the
 `GCN_GAME_MODULE=<file>` module if set, else the one beside the executable, else the one
-prepared for the disc in `game/<dol sha1>-<inputs>/`, preparing it first if there is none
+prepared for the disc in `saves/game/<dol sha1>-<inputs>/`, preparing it first if there is none
 (`runtime/prepare.h`, with its tools' output in `prepare.log` beside it). `--prepare` prepares
 again and quits. `GCN_RESOURCES=<dir>` points the preparation at an app's copy of the
 recompiler, tables, symbols and headers (`recomp/`, `tables/`, `symbols.txt`, `include/`)

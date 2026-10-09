@@ -23,11 +23,15 @@ constexpr uint32_t LC_BASE = 0x20000000;   // locked cache (guest 0xE0000000)
 void mem_init();
 extern uint8_t* g_aram;
 
-// Where the memory card lives. Null means the working directory, which is right for a
-// desktop run started from the repository. An app has no useful working directory -- on
-// Android it is "/", which is not writable -- so a frontend that knows one sets this
-// before the guest boots.
+// Where this machine's state for the game lives: the memory card, the shader cache, the
+// input logs, the prepared game, the settings. Null means saves/ in the working directory,
+// which is right for a desktop run started from the repository. An app has no useful
+// working directory -- on Android it is "/", which is not writable -- so a frontend that
+// knows one sets this before the guest boots (GCN_SAVE_DIR on the desktop).
 extern const char* g_save_dir;
+inline std::string save_path(const std::string& name) {
+    return std::string(g_save_dir ? g_save_dir : "saves") + "/" + name;
+}
 // Overrides the memory card's file when set (see exi.cpp).
 extern const char* g_memcard_path;
 
@@ -73,6 +77,14 @@ double clock_scale();
 void clock_update_limit();   // recompute g_vlimit from the next event / decrementer deadline
 void clock_pace();           // sleep if virtual time is ahead of real time (virtual clock only)
 void irq_request();          // make the running guest thread poll at its next back-edge
+// Pausing the game, from the frontend. The guest stops at its next interrupt poll, which
+// guest_pause asks for, and waits there until guest_resume: the virtual clock stands still,
+// and the time spent paused is not caught up afterwards. guest_paused says when it has
+// stopped -- until then it may still be finishing a frame, which the frontend must keep
+// taking. While it is stopped, nothing the guest uses is in use, so settings can change.
+void guest_pause();
+void guest_resume();
+bool guest_paused();
 uint64_t host_ns();          // wall clock since start, for diagnostics
 void rtc_set_base(time_t utc);  // what the RTC reads at guest time zero (hw/exi.cpp)
 

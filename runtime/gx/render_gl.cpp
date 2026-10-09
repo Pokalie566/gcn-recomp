@@ -655,11 +655,25 @@ void render_set_window_size(int w, int h) { g_win_w = w; g_win_h = h; }
 // dst * scale but matched for reuse by their logical size alone, so a survivor would be
 // reused at the old resolution and quietly sample wrong. They go with the EFB.
 static void gl_state_invalidate();
+static void efb_resize();
 void render_set_internal_scale(int scale) {
     if (scale < 1) scale = 1;
     if (scale > kMaxInternalScale) scale = kMaxInternalScale;
     if (scale == g_scale) return;
     g_scale = scale;
+    efb_resize();
+}
+
+// The same for 16:9, which stretches the EFB.
+void render_set_widescreen(bool on) {
+    g_widescreen = on;
+    const float wide = on ? (16.0f / 9.0f) / (4.0f / 3.0f) : 1.0f;
+    if (wide == g_wide) return;
+    g_wide = wide;
+    efb_resize();
+}
+
+static void efb_resize() {
     gl_state_invalidate();
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, g_efb_color);
@@ -676,7 +690,7 @@ void render_set_internal_scale(int scale) {
     }
     glBindFramebuffer(GL_FRAMEBUFFER, g_efb_fbo);
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE)
-        fatal("EFB framebuffer incomplete at internal scale %d", g_scale);
+        fatal("EFB framebuffer incomplete at internal scale %d, %s", g_scale, g_widescreen ? "16:9" : "4:3");
 }
 
 // ---------------------------------------------------------------------------
@@ -1416,9 +1430,6 @@ static void dump_efb(const EfbCopyCmd& c) {
 // Where the finished frame is blitted. 0 is the window's framebuffer; a VR frontend
 // points this at one of its swapchain images instead.
 static GLuint g_output_fbo = 0;
-// The most recent presented rect, so the output can be refreshed without the game
-// having produced a new frame (a VR compositor wants one every display frame, which is
-// far more often than this game renders).
 static void blit_to_output(const EfbCopyCmd& c, GLuint src_tex) {
     glBindFramebuffer(GL_FRAMEBUFFER, g_output_fbo);
     glDisable(GL_SCISSOR_TEST);
@@ -1448,6 +1459,41 @@ static void blit_to_output(const EfbCopyCmd& c, GLuint src_tex) {
     glBindVertexArray(g_vao);
 }
 
+// The frame last presented, copied out of the EFB before the game draws over it, so that it
+// can be shown again while the game produces none (render_present_last).
+static GLuint g_last_fbo, g_last_tex;
+static int g_last_w, g_last_h;
+static EfbCopyCmd g_last_copy;
+
+static void keep_last(const EfbCopyCmd& c) {
+    const int w = px_x(EFB_W), h = px_y(EFB_H);
+    if (!g_last_fbo) {
+        glGenFramebuffers(1, &g_last_fbo);
+        glGenTextures(1, &g_last_tex);
+    }
+    if (w != g_last_w || h != g_last_h) {
+        glBindTexture(GL_TEXTURE_2D, g_last_tex);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glBindFramebuffer(GL_FRAMEBUFFER, g_last_fbo);
+        glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, g_last_tex, 0);
+        g_last_w = w;
+        g_last_h = h;
+    }
+    glDisable(GL_SCISSOR_TEST);
+    glBindFramebuffer(GL_READ_FRAMEBUFFER, g_efb_fbo);
+    glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_last_fbo);
+    glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    g_last_copy = c;
+}
+
+bool render_present_last() {
+    if (!g_last_w) return false;
+    blit_to_output(g_last_copy, g_last_tex);
+    return true;
+}
+
 static void present(const EfbCopyCmd& c) {
     if (!g_presenting_interp) g_present_count++;
     const uint32_t numbered = g_present_count + (g_presenting_interp ? 1 : 0);
@@ -1465,6 +1511,7 @@ static void present(const EfbCopyCmd& c) {
     }
     const bool in_range = range_lo < 0 || ((int)numbered >= range_lo && (int)numbered <= range_hi);
     if (g_dump_dir && g_dump_every && in_range && numbered % g_dump_every == 0) dump_efb(c);
+    keep_last(c);
     blit_to_output(c, g_efb_color);
 }
 

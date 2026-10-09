@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <cstring>
 #include <thread>
 #include <mutex>
@@ -392,10 +393,45 @@ static void clock_log() {
     last_edges = edges; last_frames = frames;
 }
 
+static std::atomic<bool> g_pause_wanted;
+static bool g_paused;
+static std::mutex g_pause_mutex;
+static std::condition_variable g_pause_cv;
+
+void guest_pause() {
+    g_pause_wanted = true;
+    irq_request();
+}
+
+void guest_resume() {
+    std::lock_guard<std::mutex> lk(g_pause_mutex);
+    g_pause_wanted = false;
+    g_pause_cv.notify_all();
+}
+
+bool guest_paused() {
+    std::lock_guard<std::mutex> lk(g_pause_mutex);
+    return g_paused;
+}
+
+// Where the guest waits out a pause. It gets here from irq_poll, between two blocks of its
+// own code, holding nothing. ponytail: on the host clock (GCN_CLOCK=host, diagnostics only)
+// the time paused still passes for the guest.
+static void pause_point() {
+    if (!g_pause_wanted) return;
+    const uint64_t t0 = host_ns();
+    std::unique_lock<std::mutex> lk(g_pause_mutex);
+    g_paused = true;
+    g_pause_cv.wait(lk, [] { return !g_pause_wanted; });
+    g_paused = false;
+    g_pace_offset_ns -= (int64_t)(host_ns() - t0);   // the pause took no virtual time
+}
+
 // Hold virtual time to real time. Called from irq_poll, i.e. whenever an event is due,
 // which is at least every SI poll (1/120 s). When the host falls behind, the shortfall is
 // forgiven rather than caught up: the game slows down instead of fast-forwarding later.
 void clock_pace() {
+    pause_point();
     clock_log();
     if (!g_virtual_clock || g_time_scale <= 0) return;
     int64_t virt_ns = (int64_t)((double)now_ticks() * (1e9 / TB_FREQ) / g_time_scale);
