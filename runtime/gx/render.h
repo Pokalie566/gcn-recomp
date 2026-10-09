@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <vector>
 
 namespace gx {
@@ -28,8 +29,13 @@ struct GpuVertex {
 // Decoded texture (RGBA8, all mip levels), immutable once created.
 struct TexData {
     uint32_t id;
-    uint32_t width, height;
+    uint32_t width, height;                     // the game's: texel-based offsets use these
     std::vector<std::vector<uint32_t>> levels;  // RGBA8, row 0 = top
+    // A custom texture (texture_pack.h) is stored at its own size: levels[0] is
+    // data_w x data_h. 0 means width x height.
+    uint32_t data_w = 0, data_h = 0;
+    // Set when this texture is to be dumped under that name (--dump-textures).
+    std::string dump_name;
 };
 
 // Everything the pixel pipeline needs for a draw.

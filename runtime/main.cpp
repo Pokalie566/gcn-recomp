@@ -21,6 +21,7 @@
 #include <string>
 #include <thread>
 #include "mouse_aim.h"
+#include "gx/texture_pack.h"
 #include <vector>
 
 uint32_t boot_load(const char* iso_path);
@@ -285,6 +286,7 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--widescreen")) g_widescreen = true;
         else if (!strcmp(argv[i], "--interpolate")) interpolate = 1;
         else if (!strcmp(argv[i], "--mouse-aim")) g_mouse_aim = true;
+        else if (!strcmp(argv[i], "--dump-textures")) gx::texture_pack_enable_dump();
         else if (!strncmp(argv[i], "--dump-dir=", 11)) gx::g_dump_dir = argv[i] + 11;
         else if (!strncmp(argv[i], "--dump-every=", 13)) gx::g_dump_every = atoi(argv[i] + 13);
         else if (argv[i][0] != '-') iso = argv[i];

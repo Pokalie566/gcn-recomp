@@ -67,6 +67,27 @@ in-between frame does not count as a frame for texture ageing, frame dumps or
 from an unpaced run; `GCN_INTERPLOG=1` prints, per frame, the draws matched and moved far
 and the verdict.
 
+## Custom textures
+
+`gx/texture_pack.cpp` replaces textures from a pack in Dolphin's format, so the packs made
+for Dolphin work unchanged. When a texture is decoded for the first time (a cache miss in
+`texture_lookup`), and only if a pack was found or `--dump-textures` is on, its Dolphin name
+is computed -- XXH64 of the top level as stored, and for an indexed texture of the palette
+entries between the lowest and highest its texels use -- and looked up: the exact name,
+then with `$` for the palette hash, then for the texel hash, as Dolphin does.
+
+A replacement is stored at its own size (`TexData::data_w/data_h`) but keeps the game's size
+as the texture's size: `u_texsize`, which turns coordinates into texels for indirect
+offsets, must not change with the pack's resolution. If the game samples the texture with
+mipmaps, the replacement's are generated (2x2 box down to 1x1); a pack's own `_mip` files
+and the arbitrary mipmaps of `_arb` textures are not used, and DDS files are skipped. A
+replacement is read from disk when its texture is decoded, which is once until the texture
+goes unused long enough to be evicted.
+
+`--dump-textures` marks each newly decoded texture with its name; the renderer writes it
+to `textures_dump/<game id>/<name>.png` on upload, alpha kept, once per name. EFB copies are
+neither replaced nor dumped.
+
 ## Stereo scaffolding
 
 `gx/render_gl.cpp` and `gx/shadergen.cpp` carry the stereo machinery written for Wave Race:

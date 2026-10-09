@@ -607,6 +607,7 @@ static void resolve_texture(PixelState& st, int map) {
         while (levels <= maxlod && (w > 1 || h > 1)) { w = w > 1 ? w / 2 : 1; h = h > 1 ? h / 2 : 1; levels++; }
     }
     p.levels = levels;
+    p.mipmapped = mips;
     p.tlut_off = (tlut & 0x3FF) << 9;
     p.tlut_fmt = (tlut >> 10) & 3;
     const auto t0 = g_frametime ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};

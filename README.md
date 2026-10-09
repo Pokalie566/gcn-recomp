@@ -63,6 +63,12 @@ configured with. Options for the player:
 | `--interpolate` | a 30 fps game shown at 60, an in-between frame drawn between two of its own (*Frame interpolation*) |
 | `--mouse-aim` | the mouse drives the C stick, its buttons the triggers (`runtime/mouse_aim.h`) |
 | `--scale=N` | internal resolution, N times the console's (default 2) |
+| `--dump-textures` | write every texture the game uses to `textures_dump/<game id>/`, named for a pack |
+
+**Texture packs** are Dolphin's: copy a pack's `<game id>` folder (Dolphin's
+`Load/Textures/<game id>`) to `textures/` in the working directory and it is used as it is
+-- same names, same `$` wildcards, any resolution. PNG only for now. `GCN_TEXTURES=<dir>`
+looks elsewhere. See `runtime/gx/texture_pack.h`.
 
 Keyboard: arrows the control stick, X A, Z B, C X, S Y, D Z, Q L, W R, Enter Start, I J K L
 the d-pad, Escape quits. A controller works as it is plugged in. With `--mouse-aim` the

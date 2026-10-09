@@ -8,6 +8,7 @@
 #include "shadergen.h"
 #include "gl.h"
 #include "interp.h"
+#include "texture_pack.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -664,8 +665,9 @@ static void upload_texture(const TexData& t) {
     GlTex g{};
     glGenTextures(1, &g.tex);
     glBindTexture(GL_TEXTURE_2D, g.tex);
-    g.w = t.width; g.h = t.height;
-    uint32_t w = t.width, h = t.height;
+    g.w = t.width; g.h = t.height;   // the game's size, even for a larger custom texture
+    const uint32_t dw = t.data_w ? t.data_w : t.width, dh = t.data_h ? t.data_h : t.height;
+    uint32_t w = dw, h = dh;
     for (size_t l = 0; l < t.levels.size(); l++) {
         glTexImage2D(GL_TEXTURE_2D, (GLint)l, GL_RGBA8, w, h, 0, GL_RGBA, GL_UNSIGNED_BYTE, t.levels[l].data());
         w = w > 1 ? w / 2 : 1;
@@ -679,12 +681,20 @@ static void upload_texture(const TexData& t) {
     // forced opaque, so a decoded texture can be looked at apart from the draw using it.
     static const char* dump = getenv("GCN_TEXDUMP");
     if (dump) {
-        std::vector<uint8_t> px((size_t)t.width * t.height * 4);
+        std::vector<uint8_t> px((size_t)dw * dh * 4);
         memcpy(px.data(), t.levels[0].data(), px.size());
         for (size_t i = 3; i < px.size(); i += 4) px[i] = 255;
         char path[512];
         snprintf(path, sizeof(path), "%s/tex_%u.png", dump, t.id);
-        write_png(path, px.data(), (int)t.width, (int)t.height);
+        write_png(path, px.data(), (int)dw, (int)dh);
+    }
+    // --dump-textures: under Dolphin's name, alpha kept, as a pack expects it.
+    if (!t.dump_name.empty()) {
+        if (const char* dir = texture_dump_dir()) {
+            char path[512];
+            snprintf(path, sizeof(path), "%s/%s.png", dir, t.dump_name.c_str());
+            write_png(path, (const uint8_t*)t.levels[0].data(), (int)dw, (int)dh);
+        }
     }
 }
 

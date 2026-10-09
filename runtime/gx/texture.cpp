@@ -4,6 +4,7 @@
 #include "gx.h"
 #include "render.h"
 #include "texture.h"
+#include "texture_pack.h"
 #include <unordered_map>
 
 namespace gx {
@@ -371,6 +372,10 @@ TexLookup texture_lookup(const TexParams& p, std::vector<std::shared_ptr<TexData
         w = w > 1 ? w / 2 : 1;
         h = h > 1 ? h / 2 : 1;
     }
+    if (texture_pack_active())
+        texture_pack_apply(texture_name(phys_ptr(addr), p.fmt, p.width, p.height, p.mipmapped, pal,
+                                        indexed ? (uint32_t)(sizeof(g_tlut_mem) - tlut_off) : 0),
+                           *td, p.levels);
     e.variants.push_back({pal_hash, td});
     new_textures.push_back(td);
     // GCN_TEXLOG=1 reports every texture decoded: where it came from, its shape, and how

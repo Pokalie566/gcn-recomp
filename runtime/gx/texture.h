@@ -15,6 +15,7 @@ enum TexFmt : uint32_t {
 struct TexParams {
     uint32_t addr, fmt, width, height, levels;
     uint32_t tlut_off, tlut_fmt;
+    bool mipmapped;   // the sampler's mipmap filter is on, whatever the level count
 };
 
 struct TexLookup {
