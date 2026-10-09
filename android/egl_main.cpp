@@ -427,7 +427,6 @@ int main(int argc, char** argv) {
     for (;;) {
         PadState p;
         p.connected = true;
-        input_script_apply(p);
         pad_set_state(0, p);
 
         // GCN_RAMSNAP=dir dumps guest RAM every GCN_RAMSNAP_EVERY presented frames.

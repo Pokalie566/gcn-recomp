@@ -1,5 +1,6 @@
 // External Interface: IPL device (SRAM / RTC / UART). Memory cards: not present (yet).
 #include "../runtime.h"
+#include <cstdlib>
 #include "../platform.h"
 #include <ctime>
 #include <memory>
@@ -43,7 +44,10 @@ void rtc_set_base(time_t utc) { g_rtc_base = utc; }
 
 static uint32_t rtc_now() {
     // seconds since 2000-01-01 00:00:00 local time
-    if (!g_rtc_base) g_rtc_base = time(nullptr);
+    // GCN_RTC=<unix time> starts the clock at a fixed date: the game seeds things from it,
+    // so a scripted run that must play out the same every time pins it (a replay uses the
+    // recording's start instead).
+    if (!g_rtc_base) g_rtc_base = getenv("GCN_RTC") ? (time_t)atoll(getenv("GCN_RTC")) : time(nullptr);
     time_t t = g_rtc_base + (time_t)(now_ticks() / TB_FREQ);
     time_t local = t + plat_utc_offset_seconds();
     return (uint32_t)(local - 946684800);

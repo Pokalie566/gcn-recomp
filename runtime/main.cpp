@@ -246,7 +246,6 @@ static void update_pad() {
         if (lt > 1000) { p.trig_l = (uint8_t)(lt * 255 / 32767); if (lt > 30000) p.buttons |= PAD_L; }
         if (rt > 1000) { p.trig_r = (uint8_t)(rt * 255 / 32767); if (rt > 30000) p.buttons |= PAD_R; }
     }
-    input_script_apply(p);
     if (g_mouse_aim) mouse_aim_apply(p);
     pad_set_state(0, p);
 }
@@ -334,7 +333,6 @@ int main(int argc, char** argv) {
         for (;;) {
             PadState p;
             p.connected = true;
-            input_script_apply(p);
             pad_set_state(0, p);
             auto b = gx::take_batch(5);  // discard
             (void)b;

@@ -849,7 +849,6 @@ void android_main(android_app* app) {
         PadState p;
         p.connected = true;
         read_pad(p);
-        input_script_apply(p);
         pad_set_state(0, p);
 
         // Clicking the right thumbstick switches between the game's camera and its first

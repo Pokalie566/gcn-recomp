@@ -1,6 +1,7 @@
 // Serial Interface: GameCube controllers.
 #include "../runtime.h"
 #include "../input_log.h"
+#include "../input_script.h"
 #include "pad.h"
 #include <mutex>
 
@@ -19,6 +20,10 @@ static PadState pad_get(int chan) {
         std::lock_guard<std::mutex> lk(g_pad_mutex);
         p = g_pads[chan];
     }
+    // Scripted presses (GCN_INPUT) go in here, as the guest polls, against its own frame
+    // count. Applied by a frontend's loop instead, they reached the guest a frame or two late
+    // depending on how busy the host was, and a scripted run played out differently each time.
+    if (chan == 0) input_script_apply(p);
     input_pad_poll(chan, p);
     return p;
 }

@@ -43,7 +43,9 @@ by hand; `frame` is for the reader.
 
 `GCN_MEMCARD=<file>` runs on another memory card than the player's, created formatted if it
 does not exist: a scripted run should start from an empty card, and must not write to the
-real one.
+real one. `GCN_RTC=<unix time>` starts the real-time clock at a fixed date
+instead of now: a game that seeds randomness from it plays a scripted run differently every
+time otherwise.
 
 
 `GCN_INPUT="frame:BUTTON:duration,..."` presses buttons at given submitted-frame counts; `+`

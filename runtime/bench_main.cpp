@@ -101,7 +101,6 @@ int main(int argc, char** argv) {
         // state, and drain batches so the guest never blocks on a renderer.
         PadState p;
         p.connected = true;
-        input_script_apply(p);
         pad_set_state(0, p);
 
         if (auto b = gx::take_batch(5)) {
