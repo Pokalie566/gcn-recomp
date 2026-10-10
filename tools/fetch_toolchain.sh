@@ -125,7 +125,8 @@ libc="$dest/zig/lib/libc"
 case $os in
     macos) keep='^(any-darwin-any|darwin)$' ;;
     windows) keep='^(any-windows-any|mingw)$' ;;
-    linux) keep="^($arch-linux-gnu|$arch-linux-any|x86-linux-any|any-linux-any|generic-glibc|glibc)\$" ;;
+    linux) z=$arch; [ "$arch" = x86_64 ] && z=x86   # zig's glibc headers for x86_64 are x86's
+           keep="^($z-linux-gnu|$z-linux-any|any-linux-any|generic-glibc|glibc)\$" ;;
 esac
 for d in "$libc"/* "$libc"/include/*; do
     [ -d "$d" ] && [ "$(basename "$d")" != include ] && ! basename "$d" | grep -Eq "$keep" && rm -rf "$d"
