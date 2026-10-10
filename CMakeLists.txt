@@ -168,7 +168,7 @@ function(gcn_add_game)
   # Alternative entry points and the SDL-free audio stub: none of these may land in a
   # target that already has main.cpp or audio.cpp.
   list(REMOVE_ITEM RUNTIME_SOURCES ${RT}/bench_main.cpp ${RT}/audio_stub.cpp
-    ${RT}/aurora_frontend.cpp ${RT}/gx/aurora_bridge.cpp)
+    ${RT}/aurora_frontend.cpp ${RT}/gx/aurora_bridge.cpp ${RT}/gx/aurora_gpu.cpp)
 
   # Everything below the renderer and the SDL frontend -- the CPU, OS, hardware and GX
   # front end, including the batch queue in gx/xf.cpp -- is free of both GL and SDL.
@@ -501,11 +501,13 @@ function(gcn_add_game)
       GIT_REPOSITORY https://github.com/encounter/aurora.git
       GIT_TAG 40cf48fce6ce85366608596bae018c6188f2b2e7   # 2026-10-09
       # Fixes not yet upstream, one patch each (patches/aurora-*.patch).
-      PATCH_COMMAND git apply --ignore-whitespace ${GCN_RECOMP_DIR}/patches/aurora-srtg-lit-color.patch
+      # (From the pinned commit each time, so that configuring again applies them again.)
+      PATCH_COMMAND git checkout -q -- . && git apply --ignore-whitespace
+                    ${GCN_RECOMP_DIR}/patches/aurora-srtg-lit-color.patch
                     ${GCN_RECOMP_DIR}/patches/aurora-blocking-pipelines.patch
       EXCLUDE_FROM_ALL)
     FetchContent_MakeAvailable(aurora)
-    set(AURORA_SOURCES ${CORE_SOURCES} ${RT}/aurora_frontend.cpp ${RT}/gx/aurora_bridge.cpp ${RT}/png.cpp)
+    set(AURORA_SOURCES ${CORE_SOURCES} ${RT}/aurora_frontend.cpp ${RT}/gx/aurora_bridge.cpp ${RT}/gx/aurora_gpu.cpp ${RT}/png.cpp)
     list(REMOVE_ITEM AURORA_SOURCES ${RT}/gx/cmd.cpp ${RT}/gx/xf.cpp ${RT}/gx/texture.cpp
       ${RT}/gx/texture_pack.cpp ${RT}/gx/interp.cpp)
     add_executable(${G_NAME}_aurora ${AURORA_SOURCES} ${G_SOURCES})
