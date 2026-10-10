@@ -212,6 +212,7 @@ function(gcn_add_game)
                   ${GCN_RECOMP_DIR}/patches/aurora-blocking-pipelines.patch
                   ${GCN_RECOMP_DIR}/patches/aurora-rmlui-hooks.patch
                   ${GCN_RECOMP_DIR}/patches/aurora-card-game-name.patch
+                  ${GCN_RECOMP_DIR}/patches/aurora-msaa-depth-copy.patch
     ${_aurora_build}
     EXCLUDE_FROM_ALL)
   FetchContent_MakeAvailable(aurora)
