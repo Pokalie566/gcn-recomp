@@ -37,6 +37,10 @@
 		</div>
 
 		<div class="page" data-class-shown="tab == 1">
+			<button class="row" data-event-click="toggle('rumble')">
+				<span>Vibration <span class="note">when the game rumbles the pad</span></span>
+				<span class="switch" data-class-on="rumble"><span class="knob"/></span>
+			</button>
 			<button class="row" data-event-click="toggle('mouse_aim')">
 				<span>Mouse aim <span class="note">the mouse as the C stick</span></span>
 				<span class="switch" data-class-on="mouse_aim"><span class="knob"/></span>

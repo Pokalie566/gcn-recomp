@@ -15,6 +15,7 @@ struct Settings {
     bool fullscreen = false;
     bool textures = true;       // custom textures, when there is a pack
     bool mouse_aim = false;     // the mouse as the C stick
+    bool rumble = true;         // the controller's, when the game runs the pad's motor
     float mouse_sens = 1.0f;
     int volume = 100;           // percent
     Bindings bindings = bindings_default();

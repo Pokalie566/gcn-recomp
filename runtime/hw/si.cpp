@@ -47,6 +47,10 @@ static void si_update_irq() {
     pi_set_interrupt(INT_SI, irq);
 }
 
+// The low byte of what the game writes for a pad drives its motor, as Dolphin reads it
+// (SI_DeviceGCController): 1 runs it, 0 and 2 stop it.
+bool pad_motor(int chan) { return (g_outbuf[chan & 3] & 3) == 1; }
+
 static void make_poll_response(int chan, uint32_t& hi, uint32_t& lo) {
     PadState p = pad_get(chan);
     hi = ((uint32_t)(p.buttons & 0x1F7F) << 16) | 0x00800000u | ((uint32_t)p.stick_x << 8) | p.stick_y;
@@ -156,7 +160,10 @@ void si_write32(uint32_t off, uint32_t v) {
     }
     if (off < 0x30) {
         int chan = off / 12, reg = (off % 12) / 4;
-        if (reg == 0) g_outbuf[chan] = v;
+        if (reg == 0) {
+            if ((g_outbuf[chan] & 3) != (v & 3)) LOG(LOG_SI, "pad %d motor %s", chan, (v & 3) == 1 ? "on" : "off");
+            g_outbuf[chan] = v;
+        }
         return;
     }
     switch (off) {

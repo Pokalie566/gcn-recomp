@@ -266,6 +266,7 @@ bool ui_init(SDL_Window* win, const std::string& dir) {
     m.Bind("fullscreen", &g_s.fullscreen);
     m.Bind("textures", &g_s.textures);
     m.Bind("mouse_aim", &g_s.mouse_aim);
+    m.Bind("rumble", &g_s.rumble);
     m.Bind("mouse_sens", &g_s.mouse_sens);
     m.Bind("volume", &g_s.volume);
     m.Bind("binds", &g_rows);
@@ -303,7 +304,8 @@ bool ui_init(SDL_Window* win, const std::string& dir) {
     m.BindEventCallback("toggle", [](H h, Rml::Event&, Args a) {
         const Rml::String var = a.empty() ? "" : a[0].Get<Rml::String>();
         for (auto [name, field] : {std::pair{"widescreen", &g_s.widescreen}, {"interpolate", &g_s.interpolate},
-                                   {"fullscreen", &g_s.fullscreen}, {"textures", &g_s.textures}, {"mouse_aim", &g_s.mouse_aim}})
+                                   {"fullscreen", &g_s.fullscreen}, {"textures", &g_s.textures}, {"mouse_aim", &g_s.mouse_aim},
+                                   {"rumble", &g_s.rumble}})
             if (var == name) *field = !*field;
         h.DirtyVariable(var);
     });

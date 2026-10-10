@@ -30,6 +30,7 @@ bool settings_load(const std::string& path, Settings& s) {
         else if (k == "fullscreen") r.fullscreen = to_bool(v);
         else if (k == "textures") r.textures = to_bool(v);
         else if (k == "mouse_aim") r.mouse_aim = to_bool(v);
+        else if (k == "rumble") r.rumble = to_bool(v);
         else if (k == "mouse_sens") r.mouse_sens = (float)atof(v.c_str());
         else if (k == "volume") r.volume = atoi(v.c_str());
         else if (k.compare(0, 5, "bind.") == 0) {
@@ -58,6 +59,7 @@ bool settings_save(const std::string& path, const Settings& s) {
         << "fullscreen = " << s.fullscreen << "\n"
         << "textures = " << s.textures << "\n"
         << "mouse_aim = " << s.mouse_aim << "\n"
+        << "rumble = " << s.rumble << "\n"
         << "mouse_sens = " << s.mouse_sens << "\n"
         << "volume = " << s.volume << "\n"
         << "\n# Pad bindings: key:<key>, pad:<button>, axis:+<axis> or axis:-<axis>, comma-separated.\n";

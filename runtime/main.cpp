@@ -318,6 +318,7 @@ int main(int argc, char** argv) {
     // In a macOS app (<Name>.app/Contents/MacOS/<exe>), what preparing the game and the
     // menus need is in Contents/Resources (GCN_RESOURCES), and this machine's state is the
     // user's, in ~/Library/Application Support/<Name>.
+#ifdef __APPLE__
     static std::string app_res, app_data;
     const std::string exe_dir = plat_executable_dir();
     if (const size_t app = exe_dir.rfind(".app/Contents/MacOS"); app != std::string::npos && !getenv("GCN_RESOURCES")) {
@@ -327,6 +328,7 @@ int main(int argc, char** argv) {
         if (const char* home = getenv("HOME")) app_data = std::string(home) + "/Library/Application Support/" + name;
         g_save_dir = app_data.c_str();
     }
+#endif
     if (const char* d = getenv("GCN_SAVE_DIR")) g_save_dir = d;
     const std::string settings_path = save_path("settings.ini");
     if (!settings_load(settings_path, g_saved)) {
@@ -482,7 +484,7 @@ int main(int argc, char** argv) {
     auto commit = [&](const Settings& s) {
         auto take = [&](auto m) { if (s.*m != cur.*m) g_saved.*m = s.*m; };
         take(&Settings::iso), take(&Settings::scale), take(&Settings::widescreen), take(&Settings::interpolate);
-        take(&Settings::fullscreen), take(&Settings::textures), take(&Settings::mouse_aim);
+        take(&Settings::fullscreen), take(&Settings::textures), take(&Settings::mouse_aim), take(&Settings::rumble);
         take(&Settings::mouse_sens), take(&Settings::volume), take(&Settings::bindings);
         settings_save(settings_path, g_saved);
         apply_settings(win, s, &cur);
@@ -592,6 +594,13 @@ int main(int argc, char** argv) {
             if (guest_paused() && ui_take_settings(s)) commit(s);
         }
         update_pad(paused);
+        // The game's rumble, to the controller, renewed while it lasts: SDL wants a duration.
+        if (g_ctrl) {
+            const bool on = cur.rumble && !paused && pad_motor(0);
+            static bool was;
+            if (on || was) SDL_GameControllerRumble(g_ctrl, on ? 0xC000 : 0, on ? 0xC000 : 0, on ? 200 : 0);
+            was = on;
+        }
         int dw, dh;
         SDL_GL_GetDrawableSize(win, &dw, &dh);
         gx::render_set_window_size(dw, dh);

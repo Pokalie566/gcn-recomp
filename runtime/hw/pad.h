@@ -17,3 +17,5 @@ struct PadState {
 };
 
 void pad_set_state(int chan, const PadState& s);
+// Whether the game has the pad's rumble motor running.
+bool pad_motor(int chan);
