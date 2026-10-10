@@ -65,7 +65,7 @@ struct Program {
 };
 
 // Samples kept per hardware pixel, in each axis. See render_set_internal_scale.
-static int g_scale = 2;
+static int g_scale = 1;
 
 // Horizontal stretch of the EFB for a display wider than the console's 4:3: 1 at 4:3,
 // 4/3 at 16:9 (g_widescreen). The game still draws into a 640-wide EFB; it is stored

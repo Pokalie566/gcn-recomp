@@ -10,7 +10,7 @@
 
 struct Settings {
     std::string iso;            // the disc image; empty: the build's, else the first in rom/
-    int scale = 2;              // EFB samples per hardware pixel, per axis
+    int scale = 1;              // EFB samples per hardware pixel, per axis: 1 is the console's 640x528
     bool widescreen = false;    // 16:9
     bool interpolate = false;   // a 30 fps game shown at 60
     bool fullscreen = false;
