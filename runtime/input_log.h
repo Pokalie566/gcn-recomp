@@ -13,7 +13,7 @@
 //
 // A log is a directory:
 //   inputs.txt       one line per change of pad state (see the file's own header)
-//   memcard_a.raw    the memory card as it was when the run started, if there was one
+//   card/            the memory card (card.h) as it was when the run started, if there was one
 // A replay restores that card to a scratch copy so that the run sees the same saves and
 // the real card is untouched.
 #pragma once
@@ -21,15 +21,15 @@
 #include <cstdint>
 #include <string>
 
-// Start recording into `dir` (created). `memcard_path` is copied in as the snapshot when
-// it exists. Returns false, and records nothing, if the directory cannot be made.
-bool input_log_start(const std::string& dir, const std::string& memcard_path);
+// Start recording into `dir` (created). The card's folder `card_base` is copied in as the
+// snapshot when it exists. Returns false, and records nothing, if the directory cannot be made.
+bool input_log_start(const std::string& dir, const std::string& card_base);
 
 
-// Load `dir` for replay. The card snapshot, if any, is copied to `dir`/memcard_replay.raw
-// and `memcard_out` receives that path; the frontend points the EXI card at it before
+// Load `dir` for replay. The card snapshot, if any, is copied to `dir`/card_replay and
+// `card_out` receives that path; the frontend points the card at it (g_card_base) before
 // boot. Returns false if there is no inputs.txt.
-bool input_replay_load(const std::string& dir, std::string& memcard_out);
+bool input_replay_load(const std::string& dir, std::string& card_out);
 
 // Marks where the run ended: the log's last line is otherwise the last *change*, and a
 // replay would hand control back to the live pad there, which can be well before the end.

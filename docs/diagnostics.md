@@ -48,7 +48,7 @@ the memory card beside it. The path is printed at startup. `--no-input-log` turn
 
 `--replay=<dir>` plays a log back: the guest reads the logged controller instead of the live
 one until the log runs out, then the live controller takes over. The run uses a scratch copy
-of the logged card (`memcard_replay.raw` in the log directory), so the real card is never
+of the logged card (`card_replay/` in the log directory), so the real card is never
 touched and the replay sees the same saves the original did. A replay is still recorded as a
 new log, so a route can be extended by replaying it and then playing on.
 
@@ -76,8 +76,8 @@ by hand; `frame` is for the reader.
 
 ## Scripted input
 
-`GCN_MEMCARD=<file>` runs on another memory card than the player's, created formatted if it
-does not exist: a scripted run should start from an empty card, and must not write to the
+`GCN_MEMCARD=<dir>` runs on another memory card than the player's (a card folder, card.h),
+made empty if it does not exist: a scripted run should start from an empty card, and must not write to the
 real one. `GCN_RTC=<unix time>` starts the real-time clock at a fixed date
 instead of now: a game that seeds randomness from it plays a scripted run differently every
 time otherwise.

@@ -1,5 +1,6 @@
 // Input logging and replay. See input_log.h.
 #include "input_log.h"
+#include <filesystem>
 #include "runtime.h"
 #include "platform.h"
 #include <cstdio>
@@ -69,7 +70,16 @@ void record(int chan, const PadState& s) {
 
 }  // namespace
 
-bool input_log_start(const std::string& dir, const std::string& memcard_path) {
+// A card folder (card.h), copied whole. False if it could not be.
+static bool copy_dir(const std::string& from, const std::string& to) {
+    std::error_code ec;
+    std::filesystem::remove_all(to, ec);
+    std::filesystem::create_directories(to, ec);
+    std::filesystem::copy(from, to, std::filesystem::copy_options::recursive, ec);
+    return !ec;
+}
+
+bool input_log_start(const std::string& dir, const std::string& card_base) {
     plat_make_dirs(dir);
     const std::string path = dir + "/inputs.txt";
     g_out = fopen(path.c_str(), "wb");
@@ -85,10 +95,9 @@ bool input_log_start(const std::string& dir, const std::string& memcard_path) {
     fprintf(g_out, "# poll frame chan connected buttons stick_x stick_y cstick_x cstick_y trig_l trig_r\n");
     fprintf(g_out, "# (hex; each line is that channel's state from that pad poll on)\n");
     fflush(g_out);
-    if (plat_readable(memcard_path.c_str())) {
-        if (!copy_file(memcard_path, dir + "/memcard_a.raw"))
-            fprintf(stderr, "[input] could not snapshot %s into the log\n", memcard_path.c_str());
-    }
+    std::error_code ec;
+    if (std::filesystem::is_directory(card_base, ec) && !copy_dir(card_base, dir + "/card"))
+        fprintf(stderr, "[input] could not snapshot %s into the log\n", card_base.c_str());
     fprintf(stderr, "[input] logging to %s\n", path.c_str());
     return true;
 }
@@ -101,7 +110,7 @@ void input_log_end() {
     fflush(g_out);
 }
 
-bool input_replay_load(const std::string& dir, std::string& memcard_out) {
+bool input_replay_load(const std::string& dir, std::string& card_out) {
     const std::string path = dir + "/inputs.txt";
     FILE* f = fopen(path.c_str(), "rb");
     if (!f) {
@@ -147,18 +156,26 @@ bool input_replay_load(const std::string& dir, std::string& memcard_out) {
     g_replay_by_frame = version < 2;
     for (auto& s : g_replay_state) { s = PadState(); s.connected = true; }
     g_replay_loaded = true;
-    memcard_out.clear();
-    const std::string snap = dir + "/memcard_a.raw";
-    if (plat_readable(snap.c_str())) {
-        memcard_out = dir + "/memcard_replay.raw";
-        if (!copy_file(snap, memcard_out)) {
-            fprintf(stderr, "[input] could not copy the card snapshot; replaying with the live card\n");
-            memcard_out.clear();
-        }
+    // The card as the run found it, in a scratch copy: a folder, or (an older log) a raw
+    // image, which card_init takes over from there.
+    card_out.clear();
+    std::error_code ec;
+    const std::string snap = dir + "/card", raw = dir + "/memcard_a.raw", scratch = dir + "/card_replay";
+    bool ok = true;
+    if (std::filesystem::is_directory(snap, ec)) ok = copy_dir(snap, scratch), card_out = scratch;
+    else if (plat_readable(raw.c_str())) {
+        std::filesystem::remove_all(scratch, ec);
+        std::filesystem::create_directories(scratch, ec);
+        ok = copy_file(raw, scratch + "/memcard_a.raw");
+        card_out = scratch;
+    }
+    if (!ok) {
+        fprintf(stderr, "[input] could not copy the card snapshot; replaying with the live card\n");
+        card_out.clear();
     }
     fprintf(stderr, "[input] replaying %zu changes over %u %s from %s%s%s\n", g_replay.size(),
             g_replay_last_key, g_replay_by_frame ? "frames" : "polls", path.c_str(),
-            memcard_out.empty() ? "" : " (with its card snapshot)",
+            card_out.empty() ? "" : " (with its card snapshot)",
             g_replay_by_frame ? " (v1 log: keyed by frame, so only approximate)" : "");
     return true;
 }

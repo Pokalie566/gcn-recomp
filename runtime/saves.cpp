@@ -8,8 +8,6 @@
 
 namespace fs = std::filesystem;
 
-static constexpr size_t kBlock = 0x2000;
-
 static uint16_t be16(const uint8_t* p) { return (uint16_t)(p[0] << 8 | p[1]); }
 static uint32_t be32(const uint8_t* p) { return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
 
@@ -30,22 +28,28 @@ static std::string text(const uint8_t* p, size_t n) {
     return s;
 }
 
+// The .gci files of a folder, by name, with their bytes.
+static std::vector<std::pair<std::string, std::vector<uint8_t>>> gci_files(const std::string& folder) {
+    std::vector<std::pair<std::string, std::vector<uint8_t>>> out;
+    std::error_code ec;
+    for (auto it = fs::directory_iterator(folder, ec); !ec && it != fs::directory_iterator(); it.increment(ec))
+        if (it->is_regular_file(ec) && it->path().extension() == ".gci")
+            out.push_back({it->path().filename().string(), read_file(it->path().string())});
+    std::sort(out.begin(), out.end());
+    return out;
+}
+
 std::vector<CardFile> card_files(const std::string& card) {
-    const std::vector<uint8_t> d = read_file(card);
     std::vector<CardFile> out;
-    if (d.size() < 5 * kBlock || d.size() % kBlock) return out;
-    // The directory last written: the one whose update counter is ahead.
-    const uint8_t* dir = &d[kBlock];
-    if ((int16_t)(be16(&d[2 * kBlock + 0x1FFA]) - be16(&d[kBlock + 0x1FFA])) > 0) dir = &d[2 * kBlock];
-    for (int i = 0; i < 127; i++) {
-        const uint8_t* e = dir + 0x40 * i;
-        if (be32(e) == 0xFFFFFFFF) continue;
+    for (const auto& [name, d] : gci_files(card)) {
+        if (d.size() < 0x40) continue;
+        const uint8_t* e = d.data();   // the directory entry
         CardFile f;
         f.game = text(e, 6);
         f.name = text(e + 0x08, 32);
         f.modified = be32(e + 0x28);
         f.blocks = be16(e + 0x38);
-        const size_t comment = be16(e + 0x36) * kBlock + be32(e + 0x3C);
+        const size_t comment = 0x40 + (size_t)be32(e + 0x3C);
         if (comment + 64 <= d.size()) {
             const std::string a = text(&d[comment], 32), b = text(&d[comment + 32], 32);
             f.comment = b.empty() ? a : a + " - " + b;
@@ -59,42 +63,48 @@ std::vector<CardBackup> card_backups(const std::string& dir) {
     std::vector<CardBackup> out;
     std::error_code ec;
     for (auto it = fs::directory_iterator(dir, ec); !ec && it != fs::directory_iterator(); it.increment(ec)) {
-        const std::string n = it->path().filename().string();   // memcard-20261010-031200.raw
-        if (n.size() != 27 || n.compare(0, 8, "memcard-") || n.compare(23, 4, ".raw")) continue;
-        const std::string when = n.substr(8, 4) + "-" + n.substr(12, 2) + "-" + n.substr(14, 2) + " " +
-                                 n.substr(17, 2) + ":" + n.substr(19, 2);
+        const std::string n = it->path().filename().string();   // card-20261010-031200
+        if (n.size() != 20 || n.compare(0, 5, "card-") || !it->is_directory(ec)) continue;
+        const std::string when = n.substr(5, 4) + "-" + n.substr(9, 2) + "-" + n.substr(11, 2) + " " +
+                                 n.substr(14, 2) + ":" + n.substr(16, 2);
         out.push_back({it->path().string(), when});
     }
     std::sort(out.begin(), out.end(), [](const CardBackup& a, const CardBackup& b) { return a.path > b.path; });
     return out;
 }
 
-bool card_backup(const std::string& card, const std::string& dir, int keep) {
-    const std::vector<uint8_t> d = read_file(card);
-    if (d.empty()) return false;
-    std::vector<CardBackup> have = card_backups(dir);
-    if (!have.empty() && read_file(have[0].path) == d) return false;
-    char name[32];
-    const time_t now = time(nullptr);
-    strftime(name, sizeof(name), "memcard-%Y%m%d-%H%M%S.raw", localtime(&now));
+// `saves` as the .gci files of `to`, made or emptied of its own first.
+static bool write_saves(const std::vector<std::pair<std::string, std::vector<uint8_t>>>& saves, const std::string& to) {
     std::error_code ec;
-    fs::create_directories(dir, ec);
-    {
-        std::ofstream out(fs::path(dir) / name, std::ios::binary);
+    fs::create_directories(to, ec);
+    for (const auto& [name, d] : gci_files(to)) fs::remove(fs::path(to) / name, ec);
+    for (const auto& [name, d] : saves) {
+        std::ofstream out(fs::path(to) / name, std::ios::binary);
         out.write((const char*)d.data(), (std::streamsize)d.size());
         if (!out) return false;
     }
+    return true;
+}
+
+bool card_backup(const std::string& card, const std::string& dir, int keep) {
+    const auto saves = gci_files(card);
+    if (saves.empty()) return false;
+    std::vector<CardBackup> have = card_backups(dir);
+    if (!have.empty() && gci_files(have[0].path) == saves) return false;
+    char name[32];
+    const time_t now = time(nullptr);
+    strftime(name, sizeof(name), "card-%Y%m%d-%H%M%S", localtime(&now));
+    if (!write_saves(saves, (fs::path(dir) / name).string())) return false;
     have = card_backups(dir);
-    for (size_t i = (size_t)std::max(keep, 1); i < have.size(); i++) fs::remove(have[i].path, ec);
+    std::error_code ec;
+    for (size_t i = (size_t)std::max(keep, 1); i < have.size(); i++) fs::remove_all(have[i].path, ec);
     return true;
 }
 
 bool card_restore(const std::string& backup, const std::string& card, const std::string& dir, int keep) {
     // Read first: the copy of the card made next may push this one, the oldest, out.
-    const std::vector<uint8_t> d = read_file(backup);
-    if (d.empty()) return false;
+    const auto saves = gci_files(backup);
+    if (saves.empty()) return false;
     card_backup(card, dir, keep);
-    std::ofstream out(card, std::ios::binary);
-    out.write((const char*)d.data(), (std::streamsize)d.size());
-    return (bool)out;
+    return write_saves(saves, card);
 }

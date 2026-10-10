@@ -33,8 +33,6 @@ extern const char* g_save_dir;
 inline std::string save_path(const std::string& name) {
     return std::string(g_save_dir ? g_save_dir : "saves") + "/" + name;
 }
-// Overrides the memory card's file when set (see exi.cpp).
-extern const char* g_memcard_path;
 
 // 16:9 output (--widescreen or GCN_WIDESCREEN=1, read before the renderer starts). The
 // renderer stores and shows the EFB 4/3 wider; on its own that only stretches a 4:3

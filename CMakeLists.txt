@@ -161,16 +161,16 @@ function(gcn_add_game)
 
   # Alternative entry points and the SDL-free audio stub: none of these may land in a
   # target that already has main.cpp or audio.cpp.
-  list(REMOVE_ITEM RUNTIME_SOURCES ${RT}/bench_main.cpp ${RT}/audio_stub.cpp)
+  list(REMOVE_ITEM RUNTIME_SOURCES ${RT}/bench_main.cpp ${RT}/audio_stub.cpp ${RT}/hle_card_stub.cpp)
 
   # Everything below the GPU side and the SDL frontend -- the CPU, OS, hardware and the GX
   # stream translated for Aurora (gx/aurora_bridge.cpp, which never calls it) -- is free of
   # both the GPU and SDL.
   set(CORE_SOURCES ${RUNTIME_SOURCES})
   list(REMOVE_ITEM CORE_SOURCES ${RT}/main.cpp ${RT}/audio.cpp ${RT}/audio_sdl.cpp ${RT}/png.cpp
-    ${RT}/gx/aurora_gpu.cpp ${RT}/gx/packs.cpp ${RT}/pad_bindings.cpp)
+    ${RT}/gx/aurora_gpu.cpp ${RT}/gx/packs.cpp ${RT}/pad_bindings.cpp ${RT}/hle_card.cpp)
   list(FILTER CORE_SOURCES EXCLUDE REGEX "/runtime/ui/")
-  list(APPEND CORE_SOURCES ${RT}/audio_stub.cpp)
+  list(APPEND CORE_SOURCES ${RT}/audio_stub.cpp ${RT}/hle_card_stub.cpp)
   set(BENCH_SOURCES ${CORE_SOURCES} ${RT}/bench_main.cpp)
 
   # Aurora (github.com/encounter/aurora, MIT): the window, input and SDL3, the GPU through
@@ -185,7 +185,7 @@ function(gcn_add_game)
   else()
     set(AURORA_ENABLE_RMLUI ON CACHE BOOL "" FORCE)
     set(AURORA_ENABLE_DVD OFF CACHE BOOL "" FORCE)
-    set(AURORA_ENABLE_CARD OFF CACHE BOOL "" FORCE)
+    set(AURORA_ENABLE_CARD ON CACHE BOOL "" FORCE)
     set(AURORA_ENABLE_THP OFF CACHE BOOL "" FORCE)
     set(AURORA_ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
     set(AURORA_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
@@ -211,6 +211,7 @@ function(gcn_add_game)
                   ${GCN_RECOMP_DIR}/patches/aurora-srtg-lit-color.patch
                   ${GCN_RECOMP_DIR}/patches/aurora-blocking-pipelines.patch
                   ${GCN_RECOMP_DIR}/patches/aurora-rmlui-hooks.patch
+                  ${GCN_RECOMP_DIR}/patches/aurora-card-game-name.patch
     ${_aurora_build}
     EXCLUDE_FROM_ALL)
   FetchContent_MakeAvailable(aurora)
@@ -359,7 +360,7 @@ function(gcn_add_game)
     add_executable(${G_NAME} ${RUNTIME_SOURCES} ${G_SOURCES})
     _gcn_set_standards(${G_NAME})
     target_include_directories(${G_NAME} PRIVATE ${RT} ${aurora_SOURCE_DIR}/lib)
-    target_link_libraries(${G_NAME} PRIVATE aurora::core aurora::gx aurora::vi aurora::pad gcn_nod ${GCN_PLATFORM_LIBS} ${CMAKE_DL_LIBS})
+    target_link_libraries(${G_NAME} PRIVATE aurora::core aurora::gx aurora::vi aurora::pad aurora::card gcn_nod ${GCN_PLATFORM_LIBS} ${CMAKE_DL_LIBS})
     # The system's own file picker (runtime/ui/pick_file.h): AppKit on macOS, comdlg32 on Windows.
     if(APPLE)
       target_sources(${G_NAME} PRIVATE ${RT}/ui/pick_file_mac.mm)

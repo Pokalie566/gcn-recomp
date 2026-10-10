@@ -1,5 +1,6 @@
 // The launcher. See launcher.h.
 #include "ui/launcher.h"
+#include "card.h"
 #include "game_module.h"
 #include "gx/aurora_gpu.h"
 #include "gx/packs.h"
@@ -25,7 +26,7 @@ namespace {
 
 constexpr int kKeepCopies = 10;
 
-std::string card_path() { return g_memcard_path ? std::string(g_memcard_path) : save_path("memcard_a.raw"); }
+std::string card_path() { return card_folder(); }
 std::string copies_dir() { return save_path("backups"); }
 
 uint32_t be32(const uint8_t* p) { return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
@@ -158,7 +159,7 @@ void check(const LauncherEnv& env, const Settings& cur) {
                             : UiCheck{"Controller", "warn", ui_tr("None: the keyboard plays (Settings, Controls)")});
     size_t saves = 0;
     for (const CardFile& f : card_files(card_path())) saves += f.game == GCN_DISC_ID;
-    l.checks.push_back({"Memory card", "ok", !plat_readable(card_path().c_str()) ? ui_tr("New, made at the first save")
+    l.checks.push_back({"Memory card", "ok", card_files(card_path()).empty() ? ui_tr("New, made at the first save")
                                              : saves == 0 ? ui_tr("No save yet") : saves == 1 ? ui_tr("1 save") : ui_trf("{} saves", std::to_string(saves))});
     const size_t textures = gx::texture_pack_count();
     if (!textures) l.checks.push_back({"Textures", "ok", ui_tr("The game's own (no pack in textures/)")});
@@ -208,15 +209,16 @@ bool saves_act(int action, int index) {
     switch (action) {
     case UI_BACKUP:
         saves_update(ui_tr(card_backup(card_path(), copies_dir(), kKeepCopies) ? "Copy made."
-                     : plat_readable(card_path().c_str()) ? "The newest copy is already the same as the card."
+                     : !card_files(card_path()).empty() ? "The newest copy is already the same as the card."
                                                           : "No card yet: it is made at the first save."));
         return true;
     case UI_RESTORE: {
         const auto copies = card_backups(copies_dir());
         if (index < 0 || index >= (int)copies.size()) return true;
-        saves_update(card_restore(copies[index].path, card_path(), copies_dir(), kKeepCopies)
-                         ? ui_trf("Restored the copy of {}. The card as it was is now a copy.", copies[index].when)
-                         : ui_tr("Could not restore that copy."));
+        const bool ok = card_restore(copies[index].path, card_path(), copies_dir(), kKeepCopies);
+        if (ok) card_remount();
+        saves_update(ok ? ui_trf("Restored the copy of {}. The card as it was is now a copy.", copies[index].when)
+                        : ui_tr("Could not restore that copy."));
         return true;
     }
     case UI_OPEN_SAVES:

@@ -4,9 +4,7 @@
 #include "../platform.h"
 #include <ctime>
 #include <memory>
-#include "memcard.h"
 
-static std::unique_ptr<MemCard> g_card_a;
 
 struct ExiChannel {
     uint32_t csr, mar, len, cr, data;
@@ -98,7 +96,6 @@ static int selected_device(int ch) {
 
 static uint8_t device_byte(int ch, int dev, uint8_t in, bool reading) {
     if (ch == 0 && dev == 1) return ipl_transfer_byte(in);
-    if (ch == 0 && dev == 0 && g_card_a) return g_card_a->transfer(in, reading);
     return 0xFF;
 }
 
@@ -140,15 +137,7 @@ static void exi_transfer(int ch) {
 }
 
 const char* g_save_dir;
-// Set before boot to use a specific card file instead of <save dir>/memcard_a.raw. A replay
-// points this at its scratch copy of the logged run's card.
-const char* g_memcard_path;
-
-void exi_init() {
-    sram_init();
-    const std::string path = g_memcard_path ? std::string(g_memcard_path) : save_path("memcard_a.raw");
-    g_card_a = std::make_unique<MemCard>(path, 4);
-}
+void exi_init() { sram_init(); }
 
 uint32_t exi_read32(uint32_t off) {
     int ch = off / 0x14;
@@ -157,8 +146,8 @@ uint32_t exi_read32(uint32_t off) {
     switch (off % 0x14) {
     case 0x00: {
         uint32_t v = c.csr & ~0x1000u;
-        if (ch == 0 && g_card_a) v |= 0x1000;  // EXT: memory card inserted in slot A
-        // EXT: device attached. Channel 0/1 memory cards: absent. Channel 2 (AD16): absent.
+        // EXT: device attached. Memory cards: none on EXI, the game's CARD calls go to
+        // Aurora's (hle_card.cpp). Channel 2 (AD16): absent.
         return v;
     }
     case 0x04: return c.mar;
@@ -183,13 +172,6 @@ void exi_write32(uint32_t off, uint32_t v) {
         int new_dev = selected_device(ch);
         if (old_dev != new_dev && ch == 0 && old_dev == 1) ipl_deselect();
         if (new_dev == 1 && ch == 0 && old_dev != 1) ipl_deselect();
-        if (ch == 0 && g_card_a && old_dev != new_dev) {
-            if (old_dev == 0 && g_card_a->deselect()) {
-                // Card signals completion of erase/program via its EXI interrupt.
-                event_schedule_in(TB_FREQ / 2000, [] { g_exi[0].csr |= 0x2; exi_update_irq(); });
-            }
-            if (new_dev == 0) g_card_a->select();
-        }
         exi_update_irq();
         break;
     }

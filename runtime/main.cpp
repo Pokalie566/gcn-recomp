@@ -6,6 +6,7 @@
 #include "platform.h"
 #include "input_script.h"
 #include "input_log.h"
+#include "card.h"
 #include "hw/pad.h"
 #include "pad_bindings.h"
 #include "gx/aurora_bridge.h"
@@ -332,8 +333,15 @@ int main(int argc, char** argv) {
         if (prepare_only) return 0;
     }
 
-    // What the guest needs before it boots, once its module is loaded.
+    // GCN_MEMCARD=<dir>: another card than the player's (card.h), made empty if absent -- for
+    // a scripted run, which must neither see nor touch the real saves.
     std::string replay_card;
+    if (const char* mc = getenv("GCN_MEMCARD")) {
+        replay_card = mc;
+        g_card_base = replay_card.c_str();
+    }
+
+    // What the guest needs before it boots, once its module is loaded.
     auto start_guest = [&]() -> bool {
         mem_init();
         timing_init();
@@ -346,14 +354,9 @@ int main(int argc, char** argv) {
         // of that snapshot rather than the real card.
         if (!replay_dir.empty()) {
             if (!input_replay_load(replay_dir, replay_card)) return false;
-            if (!replay_card.empty()) g_memcard_path = replay_card.c_str();
+            if (!replay_card.empty()) g_card_base = replay_card.c_str();
         }
-        // GCN_MEMCARD=<file>: another card than the player's, created formatted if absent --
-        // for a scripted run, which must neither see nor touch the real saves.
-        if (const char* mc = getenv("GCN_MEMCARD"); mc && replay_card.empty()) {
-            replay_card = mc;
-            g_memcard_path = replay_card.c_str();
-        }
+        card_init();
         if (input_log) {
             if (input_log_dir.empty()) {
                 char stamp[64];
@@ -361,7 +364,7 @@ int main(int argc, char** argv) {
                 strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", localtime(&now));
                 input_log_dir = save_path(std::string("inputs/") + stamp);
             }
-            input_log_start(input_log_dir, replay_card.empty() ? save_path("memcard_a.raw") : replay_card);
+            input_log_start(input_log_dir, g_card_base ? g_card_base : save_path("card"));
         }
         return true;
     };
@@ -450,6 +453,7 @@ int main(int argc, char** argv) {
     };
 
     if (launcher && ui_ready()) {
+        card_init();   // the launcher's saves page reads it
         LauncherEnv env;
         env.win = g_win;
         const std::string device = gpu_device_name();
