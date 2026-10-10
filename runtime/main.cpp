@@ -315,20 +315,33 @@ int main(int argc, char** argv) {
     // GCN_SAVE_DIR=<dir>: this machine's state for the game -- card, settings, shader cache,
     // the prepared game -- somewhere else than saves/. A scripted run uses an empty one.
     //
-    // In a macOS app (<Name>.app/Contents/MacOS/<exe>), what preparing the game and the
-    // menus need is in Contents/Resources (GCN_RESOURCES), and this machine's state is the
-    // user's, in ~/Library/Application Support/<Name>.
-#ifdef __APPLE__
+    // An app (gcn-recomp CMakeLists, GCN_APP) carries what preparing the game and the menus
+    // need -- in <Name>.app/Contents/Resources on macOS, in resources/ beside the executable
+    // elsewhere -- and keeps this machine's state where the system keeps an app's.
     static std::string app_res, app_data;
     const std::string exe_dir = plat_executable_dir();
-    if (const size_t app = exe_dir.rfind(".app/Contents/MacOS"); app != std::string::npos && !getenv("GCN_RESOURCES")) {
-        app_res = exe_dir.substr(0, app) + ".app/Contents/Resources";
+#ifdef __APPLE__
+    if (exe_dir.find(".app/Contents/MacOS") != std::string::npos) app_res = exe_dir + "/../Resources";
+#else
+    if (plat_readable((exe_dir + "/resources/ui/pause.rml").c_str())) app_res = exe_dir + "/resources";
+#endif
+    if (!app_res.empty() && !getenv("GCN_RESOURCES")) {
+#ifdef _WIN32
+        _putenv_s("GCN_RESOURCES", app_res.c_str());
+        const char* base = getenv("APPDATA");
+        app_data = std::string(base ? base : ".") + "\\" GCN_APP_NAME;
+#else
         setenv("GCN_RESOURCES", app_res.c_str(), 1);
-        const std::string name = exe_dir.substr(exe_dir.rfind('/', app) + 1, app - exe_dir.rfind('/', app) - 1);
-        if (const char* home = getenv("HOME")) app_data = std::string(home) + "/Library/Application Support/" + name;
+        const char* home = getenv("HOME");
+#ifdef __APPLE__
+        app_data = std::string(home ? home : ".") + "/Library/Application Support/" GCN_APP_NAME;
+#else
+        const char* xdg = getenv("XDG_DATA_HOME");
+        app_data = (xdg && *xdg ? std::string(xdg) : std::string(home ? home : ".") + "/.local/share") + "/" GCN_APP_NAME;
+#endif
+#endif
         g_save_dir = app_data.c_str();
     }
-#endif
     if (const char* d = getenv("GCN_SAVE_DIR")) g_save_dir = d;
     const std::string settings_path = save_path("settings.ini");
     if (!settings_load(settings_path, g_saved)) {

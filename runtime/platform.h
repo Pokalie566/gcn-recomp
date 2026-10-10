@@ -68,3 +68,9 @@ void* plat_module_symbol(void* module, const char* name);
 // Runs a program and waits for it. argv[0] is looked up in PATH; its output is appended to
 // `log` when one is given. Returns its exit status, or -1 if it could not be started.
 int plat_run(const std::vector<std::string>& argv, const char* log);
+// The log for a run whose output is of no interest.
+#ifdef _WIN32
+constexpr const char* kPlatNull = "NUL";
+#else
+constexpr const char* kPlatNull = "/dev/null";
+#endif

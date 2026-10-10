@@ -72,6 +72,11 @@ function(gcn_add_game)
     set(_default_iso "")
   endif()
   set(GAME_ISO "${_default_iso}" CACHE FILEPATH "Your ${G_TITLE} disc image (.iso or .ciso)")
+  if(G_APP_NAME)
+    set(_app ${G_APP_NAME})
+  else()
+    set(_app ${G_NAME})
+  endif()
   # An app is handed out: it is built from no disc and knows of none.
   if(GCN_APP)
     set(GAME_ISO "")
@@ -144,6 +149,13 @@ function(gcn_add_game)
     if(APPLE)
       set_target_properties(${G_NAME}_game PROPERTIES SUFFIX ".dylib")
       target_link_options(${G_NAME}_game PRIVATE -undefined dynamic_lookup)
+    elseif(WIN32)
+      # A DLL: it takes the runtime's data as imported, links with the executable's import
+      # library (below, once the executable exists), and exports what game_module.cpp
+      # looks up -- as game_module_build does on a player's machine.
+      target_compile_definitions(game_recomp PRIVATE GCN_MODULE_DLL)
+      target_link_options(${G_NAME}_game PRIVATE /EXPORT:g_recomp_funcs,DATA /EXPORT:g_recomp_func_count,DATA
+                          /EXPORT:g_recomp_code_base,DATA /EXPORT:g_recomp_code_end,DATA /EXPORT:orig_OSSaveContext)
     endif()
   endif()
 
@@ -236,6 +248,7 @@ function(gcn_add_game)
     GCN_DISC_ID="${G_DISC_ID}"
     GCN_GAME_FPS=${G_FPS}
     GCN_GAME_NAME="${G_NAME}"
+    GCN_APP_NAME="${_app}"
     GCN_DOL_SHA1="${G_DOL_SHA1}"
     # What preparing the game on a player's machine uses (runtime/prepare.h), from the
     # source tree; an app points GCN_RESOURCES at its own copy.
@@ -305,6 +318,8 @@ function(gcn_add_game)
     # ours, then the game's over them.
     if(GCN_APP AND APPLE)
       set(_ui_dest $<TARGET_BUNDLE_CONTENT_DIR:${G_NAME}>/Resources/ui)
+    elseif(GCN_APP)
+      set(_ui_dest $<TARGET_FILE_DIR:${G_NAME}>/resources/ui)
     else()
       set(_ui_dest $<TARGET_FILE_DIR:${G_NAME}>/ui)
     endif()
@@ -325,29 +340,38 @@ function(gcn_add_game)
     target_link_libraries(${G_NAME} PRIVATE gcn_rmlui_backend ${GCN_SDL_TARGET} ${GCN_PLATFORM_LIBS} ${CMAKE_DL_LIBS})
     set_target_properties(${G_NAME} PROPERTIES ENABLE_EXPORTS ON)
     add_dependencies(${G_NAME} ${G_NAME}_ui)
-    if(TARGET ${G_NAME}_game)
+    if(WIN32)
+      # A DLL cannot leave symbols for the executable to fill in as it loads: the module
+      # links with the executable's import library instead, of everything it defines.
+      set_target_properties(${G_NAME} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+      target_compile_definitions(${G_NAME} PRIVATE GCN_RES_IMPORT_LIB="$<TARGET_LINKER_FILE:${G_NAME}>")
+    endif()
+    if(TARGET ${G_NAME}_game AND WIN32)
+      target_link_libraries(${G_NAME}_game PRIVATE ${G_NAME})   # the import library: built after
+    elseif(TARGET ${G_NAME}_game)
       add_dependencies(${G_NAME} ${G_NAME}_game)
     endif()
     target_compile_options(${G_NAME} PRIVATE ${GCN_RUNTIME_WARNINGS})
     target_compile_definitions(${G_NAME} PRIVATE ${GCN_GAME_DEFS} ${GCN_GL_DEFS})
 
-    # The macOS app: <APP_NAME>.app, with in Contents/Resources what preparing the game on
-    # the player's machine needs (runtime/prepare.h: the recompiler, the tables, the
-    # symbols, the headers the generated code includes), the menus, and the licences.
-    # main.cpp finds them there, and keeps the player's state in Application Support.
-    if(GCN_APP AND APPLE)
-      if(G_APP_NAME)
-        set(_app ${G_APP_NAME})
+    # The app: what preparing the game on the player's machine needs (runtime/prepare.h:
+    # the recompiler, the tables, the symbols, the headers the generated code includes),
+    # the menus and the licences, in <APP_NAME>.app/Contents/Resources on macOS, in
+    # resources/ beside the executable elsewhere. main.cpp finds them there, and keeps the
+    # player's state in the system's place for it (Application Support, ~/.local/share,
+    # %APPDATA%).
+    if(GCN_APP)
+      if(APPLE)
+        set_target_properties(${G_NAME} PROPERTIES MACOSX_BUNDLE ON OUTPUT_NAME "${_app}"
+          MACOSX_BUNDLE_INFO_PLIST ${RT}/app/Info.plist.in
+          MACOSX_BUNDLE_BUNDLE_NAME "${_app}"
+          MACOSX_BUNDLE_GUI_IDENTIFIER "${G_APP_ID}"
+          MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+          MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}")
+        set(_res $<TARGET_BUNDLE_CONTENT_DIR:${G_NAME}>/Resources)
       else()
-        set(_app ${G_NAME})
+        set(_res $<TARGET_FILE_DIR:${G_NAME}>/resources)
       endif()
-      set_target_properties(${G_NAME} PROPERTIES MACOSX_BUNDLE ON OUTPUT_NAME "${_app}"
-        MACOSX_BUNDLE_INFO_PLIST ${RT}/app/Info.plist.in
-        MACOSX_BUNDLE_BUNDLE_NAME "${_app}"
-        MACOSX_BUNDLE_GUI_IDENTIFIER "${G_APP_ID}"
-        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
-        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}")
-      set(_res $<TARGET_BUNDLE_CONTENT_DIR:${G_NAME}>/Resources)
       file(GLOB _recomp_py ${GCN_RECOMP_DIR}/recomp/*.py)
       set(_game_licenses)
       if(G_LICENSES)
@@ -365,6 +389,12 @@ function(gcn_add_game)
         COMMAND ${CMAKE_COMMAND} -E copy ${RT}/ui/assets/fonts/OFL.txt ${_res}/licenses/FiraSans-OFL.txt
         ${_game_licenses}
         VERBATIM)
+      if(WIN32)
+        add_custom_command(TARGET ${G_NAME} POST_BUILD
+          COMMAND ${CMAKE_COMMAND} -E make_directory ${_res}/lib
+          COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_LINKER_FILE:${G_NAME}> ${_res}/lib/${G_NAME}.lib
+          VERBATIM)
+      endif()
     endif()
   endif()
 

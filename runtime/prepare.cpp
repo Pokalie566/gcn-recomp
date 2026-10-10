@@ -5,12 +5,9 @@
 #include "runtime.h"
 #include "sha1.h"
 #include <algorithm>
-#include <atomic>
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
-#include <mutex>
-#include <thread>
 #include <vector>
 #ifdef __APPLE__
 #include <sys/xattr.h>
@@ -18,12 +15,27 @@
 
 namespace fs = std::filesystem;
 
+#ifndef GCN_RES_IMPORT_LIB
+#define GCN_RES_IMPORT_LIB ""   // set on the game's own target, on Windows
+#endif
+
 PrepareSources prepare_sources() {
     if (const char* r = getenv("GCN_RESOURCES")) {
         const std::string d = r;
-        return {d + "/recomp", d + "/tables", d + "/symbols.txt", d + "/include"};
+        return {d + "/recomp", d + "/tables", d + "/symbols.txt", d + "/include", d + "/lib/" GCN_GAME_NAME ".lib"};
     }
-    return {GCN_RES_RECOMP, GCN_RES_TABLES, GCN_RES_SYMBOLS, GCN_RES_INCLUDE};
+    return {GCN_RES_RECOMP, GCN_RES_TABLES, GCN_RES_SYMBOLS, GCN_RES_INCLUDE, GCN_RES_IMPORT_LIB};
+}
+
+// How python 3 is started: `python3` on macOS and Linux; on Windows the py launcher that
+// python.org's installer puts in, else `python`.
+static std::vector<std::string> python() {
+#ifdef _WIN32
+    if (plat_run({"py", "-3", "--version"}, kPlatNull) == 0) return {"py", "-3"};
+    return {"python"};
+#else
+    return {"python3"};
+#endif
 }
 
 static uint32_t be32(const uint8_t* p) { return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
@@ -68,17 +80,6 @@ bool prepare_check_disc(const char* iso, std::string* dol_sha1, std::string* err
     return true;
 }
 
-// The compiler flags the generated code is built with: the same as a development build's
-// (gcn-recomp CMakeLists, game_recomp), and the defines that change the CPU struct's layout.
-static std::vector<std::string> cflags() {
-    std::vector<std::string> f = {"-std=gnu11", "-O2", "-fPIC", "-fno-strict-aliasing",
-                                  "-ffp-contract=off", "-w"};
-#ifdef GCN_TRACE_CALLS
-    f.push_back("-DGCN_TRACE_CALLS");
-#endif
-    return f;
-}
-
 // A hash of everything a prepared game depends on besides the disc: the recompiler, the
 // tables, the symbols, the headers, the flags. Any change prepares again.
 static std::string inputs_hash() {
@@ -99,7 +100,7 @@ static std::string inputs_hash() {
         h.update(name.data(), name.size());
         h.update(data.data(), data.size());
     }
-    for (const auto& f : cflags()) h.update(f.data(), f.size());
+    for (const auto& f : game_module_cflags()) h.update(f.data(), f.size());
     return h.hex();
 }
 
@@ -113,17 +114,16 @@ bool prepare_tools_present(std::string* missing) {
 #ifdef __APPLE__
     // Without the Command Line Tools, cc and python3 are stubs that put up Apple's installer
     // when run; asking xcode-select first keeps a check from doing that by itself.
-    if (plat_run({"xcode-select", "-p"}, "/dev/null") != 0) {
+    if (plat_run({"xcode-select", "-p"}, kPlatNull) != 0) {
         *missing = "Apple's Command Line Tools";
         return false;
     }
 #endif
-    // `cc --version` and `python3 --version` run quietly when the tools are there. On macOS
-    // without the Command Line Tools, both are stubs that fail (and offer to install them).
-    const std::string null = "/dev/null";
-    if (plat_run({"cc", "--version"}, null.c_str()) != 0) *missing += "cc ";
-    if (plat_run({"python3", "--version"}, null.c_str()) != 0) *missing += "python3 ";
-    if (!missing->empty()) missing->pop_back();
+    std::string compiler;
+    if (!game_module_compiler_present(&compiler)) *missing = compiler;
+    std::vector<std::string> py = python();
+    py.push_back("--version");
+    if (plat_run(py, kPlatNull) != 0) *missing += std::string(missing->empty() ? "" : ", ") + "python3";
     return missing->empty();
 }
 
@@ -136,8 +136,10 @@ bool prepare_game(const char* iso, std::string* module, std::string* err,
     std::string missing;
     if (!prepare_tools_present(&missing)) {
         *err = "missing tools: " + missing +
-#ifdef __APPLE__
+#if defined(__APPLE__)
                " -- install Apple's Command Line Tools: xcode-select --install";
+#elif defined(_WIN32)
+               " -- install Visual Studio's C++ build tools and Python 3 (python.org)";
 #else
                " -- install a C compiler and python3";
 #endif
@@ -165,52 +167,28 @@ bool prepare_game(const char* iso, std::string* module, std::string* err,
 
     say(0.05f, "recompiling");
     const PrepareSources src = prepare_sources();
-    if (plat_run({"python3", src.recompiler + "/recomp.py", (work / "main.dol").string(), src.symbols,
-                  (work / "gen").string(), src.tables}, log.c_str()) != 0) {
+    std::vector<std::string> recomp = python();
+    recomp.insert(recomp.end(), {src.recompiler + "/recomp.py", (work / "main.dol").string(), src.symbols,
+                                 (work / "gen").string(), src.tables});
+    if (plat_run(recomp, log.c_str()) != 0) {
         *err = "the recompiler failed; see " + log;
         return false;
     }
     fs::remove(work / "main.dol", ec);   // the player's own data, not kept beyond its use
 
-    std::vector<fs::path> sources;
+    std::vector<std::string> sources;
     for (auto it = fs::directory_iterator(work / "gen", ec); !ec && it != fs::directory_iterator(); it.increment(ec))
-        if (it->path().extension() == ".c") sources.push_back(it->path());
+        if (it->path().extension() == ".c") sources.push_back(it->path().string());
     std::sort(sources.begin(), sources.end());
     if (sources.empty()) { *err = "the recompiler wrote nothing; see " + log; return false; }
 
-    // Compiled in parallel, one compiler per core.
-    std::atomic<size_t> next{0}, done{0};
-    std::atomic<bool> failed{false};
-    std::mutex say_mutex;
-    const std::vector<std::string> flags = cflags();
-    auto worker = [&] {
-        for (size_t i; !failed && (i = next++) < sources.size();) {
-            std::vector<std::string> argv = {"cc"};
-            argv.insert(argv.end(), flags.begin(), flags.end());
-            argv.insert(argv.end(), {"-I" + src.include, "-I" + (work / "gen").string(), "-c",
-                                     sources[i].string(), "-o", sources[i].string() + ".o"});
-            if (plat_run(argv, log.c_str()) != 0) { failed = true; return; }
-            const size_t n = ++done;
-            std::lock_guard<std::mutex> lk(say_mutex);
-            say(0.25f + 0.70f * (float)n / (float)sources.size(),
-                "compiling " + std::to_string(n) + "/" + std::to_string(sources.size()));
-        }
-    };
-    std::vector<std::thread> pool;
-    for (unsigned i = 0; i < std::max(1u, std::thread::hardware_concurrency()); i++) pool.emplace_back(worker);
-    for (auto& t : pool) t.join();
-    if (failed) { *err = "compiling the game failed; see " + log; return false; }
-
-    say(0.96f, "linking");
-    std::vector<std::string> link = {"cc",
-#ifdef __APPLE__
-                                     "-dynamiclib", "-undefined", "dynamic_lookup",
-#else
-                                     "-shared",
-#endif
-                                     "-o", (work / game_module_filename()).string()};
-    for (const auto& s : sources) link.push_back(s.string() + ".o");
-    if (plat_run(link, log.c_str()) != 0) { *err = "linking the game failed; see " + log; return false; }
+    say(0.25f, "compiling");
+    if (!game_module_build(sources, {src.include, (work / "gen").string()}, (work / game_module_filename()).string(),
+                           src.import_lib, log, err, [&](size_t done, size_t total) {
+                               say(0.25f + 0.70f * (float)done / (float)total,
+                                   "compiling " + std::to_string(done) + "/" + std::to_string(total));
+                           }))
+        return false;
 
     // Only the module and the log are kept: the generated C and the objects are the game's
     // code, and nothing needs them once it is linked.

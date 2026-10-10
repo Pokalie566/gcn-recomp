@@ -93,7 +93,15 @@ void heap_trace_free(CPU* c);
 #define MSR_EE 0x8000u
 
 /* ---- memory ---- */
-extern uint8_t* g_mem;             /* 1GB host reservation; guest addr & 0x3FFFFFFF */
+/* The runtime's data that generated code reads. A game module built as a Windows DLL
+   (GCN_MODULE_DLL, game_module.h) takes it from the executable, which MSVC has to be told;
+   functions need no such note. */
+#if defined(_WIN32) && defined(GCN_MODULE_DLL)
+#define GCN_RUNTIME_DATA __declspec(dllimport)
+#else
+#define GCN_RUNTIME_DATA
+#endif
+extern GCN_RUNTIME_DATA uint8_t* g_mem;             /* 1GB host reservation; guest addr & 0x3FFFFFFF */
 #define HOST(a) (g_mem + ((uint32_t)(a) & 0x3FFFFFFFu))
 #define IS_MMIO(a) ((uint32_t)((a) - 0xC8000000u) < 0x08000000u)
 
@@ -228,8 +236,8 @@ jmp_buf* hle_context_jmpbuf(CPU* c);
    -- retrace, DVD completion, decrementer -- land on the same instructions. g_vlimit is the
    count at which the next event is due (or 0 when the runtime wants attention), so the
    hot path is one increment and one compare. See clock_* in cpu.cpp. */
-extern volatile uint64_t g_vcount;
-extern volatile uint64_t g_vlimit;
+extern GCN_RUNTIME_DATA volatile uint64_t g_vcount;
+extern GCN_RUNTIME_DATA volatile uint64_t g_vlimit;
 void irq_poll(CPU* c);
 #define IRQ_CHECK() do { if (UNLIKELY(++g_vcount >= g_vlimit)) irq_poll(c); } while (0)
 /* The OS idle spin (tables/idle.txt): nothing will change until the next event, so the

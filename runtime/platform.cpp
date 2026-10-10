@@ -216,12 +216,49 @@ void* plat_module_symbol(void* module, const char* name) {
     return (void*)GetProcAddress((HMODULE)module, name);
 }
 
+// One argument as CreateProcess's command line wants it: quoted, its quotes and the
+// backslashes before them escaped, as the C runtime splits a command line again.
+static std::string quote_arg(const std::string& a) {
+    if (!a.empty() && a.find_first_of(" \t\"") == std::string::npos) return a;
+    std::string q = "\"";
+    size_t slashes = 0;
+    for (char c : a) {
+        if (c == '\\') { slashes++; continue; }
+        q.append(c == '"' ? slashes * 2 + 1 : slashes, '\\');
+        slashes = 0;
+        q += c;
+    }
+    q.append(slashes * 2, '\\');
+    return q + "\"";
+}
+
 int plat_run(const std::vector<std::string>& argv, const char* log) {
-    (void)log;  // ponytail: output is inherited on Windows; redirect it if a launcher needs the log
-    std::vector<const char*> args;
-    for (const auto& a : argv) args.push_back(a.c_str());
-    args.push_back(nullptr);
-    return (int)_spawnvp(_P_WAIT, args[0], args.data());
+    std::string cmd;
+    for (const auto& a : argv) cmd += (cmd.empty() ? "" : " ") + quote_arg(a);
+    SECURITY_ATTRIBUTES sa{sizeof(sa), nullptr, TRUE};
+    HANDLE out = INVALID_HANDLE_VALUE;
+    if (log) {
+        out = CreateFileA(log, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_ALWAYS,
+                          FILE_ATTRIBUTE_NORMAL, nullptr);
+    }
+    STARTUPINFOA si{};
+    si.cb = sizeof(si);
+    if (out != INVALID_HANDLE_VALUE) {
+        si.dwFlags = STARTF_USESTDHANDLES;
+        si.hStdOutput = si.hStdError = out;
+        si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
+    }
+    PROCESS_INFORMATION pi{};
+    const BOOL ok = CreateProcessA(nullptr, cmd.data(), nullptr, nullptr, out != INVALID_HANDLE_VALUE,
+                                   CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+    if (out != INVALID_HANDLE_VALUE) CloseHandle(out);
+    if (!ok) return -1;
+    WaitForSingleObject(pi.hProcess, INFINITE);
+    DWORD code = 1;
+    GetExitCodeProcess(pi.hProcess, &code);
+    CloseHandle(pi.hProcess);
+    CloseHandle(pi.hThread);
+    return (int)code;
 }
 
 // ===========================================================================
@@ -400,9 +437,9 @@ void plat_restart(char** argv) {
 void plat_open_folder(const std::string& dir) {
     plat_make_dirs(dir);
 #ifdef __APPLE__
-    plat_run({"open", dir}, "/dev/null");
+    plat_run({"open", dir}, kPlatNull);
 #else
-    plat_run({"xdg-open", dir}, "/dev/null");
+    plat_run({"xdg-open", dir}, kPlatNull);
 #endif
 }
 

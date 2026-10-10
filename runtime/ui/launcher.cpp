@@ -274,7 +274,7 @@ bool launcher_run(LauncherEnv& env, Settings& cur) {
             check(env, cur);
             prepare_start(cur.iso);
         } else if (a == UI_INSTALL_TOOLS) {
-            plat_run({"xcode-select", "--install"}, "/dev/null");
+            plat_run({"xcode-select", "--install"}, kPlatNull);
         } else if (saves_act(a, index)) {
             if (a == UI_RESTORE && !g_l.preparing) check(env, cur);
         }

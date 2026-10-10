@@ -9,7 +9,8 @@
 //
 // What it needs ships with the app (prepare_sources): the recompiler, the tables, the symbol
 // table, the runtime headers the generated code includes. What it needs from the machine is
-// a C compiler and python3 -- on macOS, Apple's Command Line Tools.
+// a C compiler and python3 -- on macOS, Apple's Command Line Tools; on Windows, Visual
+// Studio's C++ build tools and Python 3.
 //
 // The result lives in game/<dol sha1>-<inputs>/ under save_path, the second half a hash of everything
 // that went into it, so that an app update that changes the tables prepares again.
@@ -22,6 +23,7 @@ struct PrepareSources {
     std::string tables;       // the game's recomp/ tables
     std::string symbols;      // its symbols.txt
     std::string include;      // the runtime headers: recomp.h, compat.h
+    std::string import_lib;   // on Windows, the executable's import library, for the module to link with
 };
 // A development build's: the source tree it was configured from. GCN_RESOURCES=<dir>, laid
 // out as an app's Resources (recomp/, tables/, symbols.txt, include/), overrides it.

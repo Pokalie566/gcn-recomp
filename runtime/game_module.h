@@ -16,7 +16,9 @@
 // GCN_STATIC_GAME and never loads anything.
 #pragma once
 #include "recomp.h"
+#include <functional>
 #include <string>
+#include <vector>
 
 struct GameModule {
     const RecompFunc* funcs = nullptr;
@@ -34,3 +36,20 @@ bool game_module_load(const std::string& path, std::string* err);
 // Which module to load when nothing else says: GCN_GAME_MODULE, else a development build's
 // beside the executable, else `prepared` if it exists. Empty when there is none.
 std::string game_module_find(const std::string& prepared);
+
+// ---- Building one ----
+// With the machine's own compiler: cc on macOS and Linux, Visual Studio's C++ tools on
+// Windows (found with vswhere). False, with what is missing, if they are not there.
+bool game_module_compiler_present(std::string* missing);
+
+// Compiles `sources` and links them as the module `out`, the way a game module must be
+// built: position-independent, the runtime's symbols left for the executable to provide --
+// on Windows through `import_lib`, the executable's import library, which also means the
+// module takes the runtime's data as imported (GCN_MODULE_DLL, recomp.h). In parallel; the
+// tools' output goes to `log`, and `progress` hears how many files are compiled.
+bool game_module_build(const std::vector<std::string>& sources, const std::vector<std::string>& includes,
+                       const std::string& out, const std::string& import_lib, const std::string& log,
+                       std::string* err, const std::function<void(size_t done, size_t total)>& progress);
+
+// The flags it compiles with, which a prepared module's hash takes in.
+std::vector<std::string> game_module_cflags();
