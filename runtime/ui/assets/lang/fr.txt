@@ -173,3 +173,6 @@ Esc (or Back on a controller) pauses the game: saves, settings, back to the laun
 Go to the launcher = Aller au lanceur
 Next = Suivant
 1 texture = 1 texture
+The game stopped: {} = Le jeu s'est arrêté : {}
+What happened is in the log, which the next start keeps as the old one: {} = Ce qui s'est passé est dans le journal, que le prochain lancement garde comme l'ancien : {}
+There is no log. = Il n'y a pas de journal.

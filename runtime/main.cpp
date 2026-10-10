@@ -7,6 +7,7 @@
 #include "input_script.h"
 #include "input_log.h"
 #include "card.h"
+#include "crash_log.h"
 #include "hw/pad.h"
 #include "pad_bindings.h"
 #include "gx/aurora_bridge.h"
@@ -47,15 +48,17 @@ static void on_interrupt() {
 
 static void on_fault(const void* fault_addr, int code) {
     uintptr_t a = (uintptr_t)fault_addr;
-    if (a >= (uintptr_t)g_mem && a < (uintptr_t)g_mem + 0x40000000)
-        fprintf(stderr, "\nFAULT: guest memory access at (addr & 0x3FFFFFFF) = %08lX\n",
-                (unsigned long)(a - (uintptr_t)g_mem));
+    char what[128];
+    if (g_mem && a >= (uintptr_t)g_mem && a < (uintptr_t)g_mem + 0x40000000)
+        snprintf(what, sizeof(what), "a memory fault, guest address %08lX", (unsigned long)(a - (uintptr_t)g_mem));
     else
-        fprintf(stderr, "\nFAULT: host address %p (code %d)\n", fault_addr, code);
-    plat_watchdog(2, 2);
+        snprintf(what, sizeof(what), "a memory fault, host address %p (code %d)", fault_addr, code);
+    fprintf(stderr, "\nFAULT: %s\n", what);
+    plat_watchdog(4, 2);
     input_log_end();
     plat_backtrace_print();
     debug_dump_threads();
+    crash_report(what);
     plat_exit_now(1);
 }
 
@@ -249,6 +252,7 @@ static void apply_settings(const Settings& s, const Settings* was) {
 }
 
 int main(int argc, char** argv) {
+    if (crash_report_main(argc, argv)) return 0;   // the dialog of a run that crashed
     g_argc = argc;
     g_argv = argv;
     // GCN_SAVE_DIR=<dir>: this machine's state for the game -- card, settings, shader cache,
@@ -282,6 +286,9 @@ int main(int argc, char** argv) {
         g_save_dir = app_data.c_str();
     }
     if (const char* d = getenv("GCN_SAVE_DIR")) g_save_dir = d;
+    plat_make_dirs(save_path(""));
+    log_start(save_path(GCN_GAME_NAME ".log"));
+    g_fatal_hook = crash_report;
     const std::string settings_path = save_path("settings.ini");
     if (!settings_load(settings_path, g_saved)) {
         plat_make_dirs(save_path(""));
@@ -421,6 +428,12 @@ int main(int argc, char** argv) {
     mouse_aim_init();
     apply_settings(cur, nullptr);
     ui_init(g_win, ui_dir, cur.lang);
+    crash_set_translator(ui_trf);
+    // GCN_CRASH_TEST=1: a fault right here, =fatal a fatal error, to see the crash report.
+    if (const char* t = getenv("GCN_CRASH_TEST")) {
+        if (!strcmp(t, "fatal")) fatal("GCN_CRASH_TEST");
+        *(volatile int*)nullptr = 1;
+    }
     // A change the player made: applied, and saved over settings.ini's.
     auto commit = [&](const Settings& s) {
         auto take = [&](auto m) { if (s.*m != cur.*m) g_saved.*m = s.*m; };

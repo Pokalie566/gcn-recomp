@@ -201,6 +201,20 @@ void plat_restart(char** argv) {
     _execv(plat_executable_path().c_str(), argv);
 }
 
+static std::string quote_arg(const std::string& a);
+
+void plat_spawn_detached(const std::vector<std::string>& argv) {
+    std::string cmd;
+    for (const auto& a : argv) cmd += (cmd.empty() ? "" : " ") + quote_arg(a);
+    STARTUPINFOA si{};
+    si.cb = sizeof(si);
+    PROCESS_INFORMATION pi{};
+    if (CreateProcessA(nullptr, cmd.data(), nullptr, nullptr, FALSE, DETACHED_PROCESS, nullptr, nullptr, &si, &pi)) {
+        CloseHandle(pi.hThread);
+        CloseHandle(pi.hProcess);
+    }
+}
+
 void plat_open_folder(const std::string& dir) {
     plat_make_dirs(dir);
     plat_run({"explorer", dir}, nullptr);
@@ -436,6 +450,14 @@ std::string plat_executable_path() {
 
 void plat_restart(char** argv) {
     execv(plat_executable_path().c_str(), argv);
+}
+
+void plat_spawn_detached(const std::vector<std::string>& argv) {
+    std::vector<char*> args;
+    for (const auto& a : argv) args.push_back(const_cast<char*>(a.c_str()));
+    args.push_back(nullptr);
+    pid_t pid;
+    posix_spawn(&pid, args[0], nullptr, nullptr, args.data(), environ);
 }
 
 void plat_open_folder(const std::string& dir) {

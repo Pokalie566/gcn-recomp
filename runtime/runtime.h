@@ -15,6 +15,8 @@ extern bool g_log_enabled[LOG_COUNT];
 bool log_enable_list(const char* list);  // "exi,dsp" or "all"
 void log_msg(LogCat cat, const char* fmt, ...) GCN_PRINTF_FMT(2, 3);
 [[noreturn]] void fatal(const char* fmt, ...) GCN_PRINTF_FMT(1, 2);
+// Called by fatal() with its message before it aborts: the frontend's crash report.
+extern void (*g_fatal_hook)(const char* msg);
 #define LOG(cat, ...) do { if (g_log_enabled[cat]) log_msg(cat, __VA_ARGS__); } while (0)
 
 // ---- memory ----

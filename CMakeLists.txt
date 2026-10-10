@@ -168,7 +168,7 @@ function(gcn_add_game)
   # both the GPU and SDL.
   set(CORE_SOURCES ${RUNTIME_SOURCES})
   list(REMOVE_ITEM CORE_SOURCES ${RT}/main.cpp ${RT}/audio.cpp ${RT}/audio_sdl.cpp ${RT}/png.cpp
-    ${RT}/gx/aurora_gpu.cpp ${RT}/gx/packs.cpp ${RT}/pad_bindings.cpp ${RT}/hle_card.cpp)
+    ${RT}/gx/aurora_gpu.cpp ${RT}/gx/packs.cpp ${RT}/pad_bindings.cpp ${RT}/hle_card.cpp ${RT}/crash_log.cpp)
   list(FILTER CORE_SOURCES EXCLUDE REGEX "/runtime/ui/")
   list(APPEND CORE_SOURCES ${RT}/audio_stub.cpp ${RT}/hle_card_stub.cpp)
   set(BENCH_SOURCES ${CORE_SOURCES} ${RT}/bench_main.cpp)

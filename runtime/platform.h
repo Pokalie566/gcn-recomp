@@ -57,6 +57,8 @@ std::string plat_executable_dir();
 // Starts this program again in place of this process, with these arguments (null-ended).
 // Returns only if it could not.
 void plat_restart(char** argv);
+// Starts `argv` and leaves it running, this process not waiting for it (nor it for this one).
+void plat_spawn_detached(const std::vector<std::string>& argv);
 // Shows a directory in the system's file browser, creating it first.
 void plat_open_folder(const std::string& dir);
 

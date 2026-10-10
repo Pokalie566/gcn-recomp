@@ -168,6 +168,13 @@ goes to stderr, to the crash record (first line only) and to `<save dir>/panic.t
 the one to read on a device after the fact. A host fault inside guest memory prints the
 guest address and every thread's registers.
 
+Everything on stderr also goes to `<save dir>/<game>.log` (`crash_log.h`); the run before's
+is kept as `<game>.old.log`. A fault or a `fatal()` (a panic included) ends with a `CRASH:`
+line there and a dialog for the player, shown by the executable started again with
+`--crash-report=<text>` (the crashed process may not be able to draw). `GCN_CRASH_TEST=1`
+faults on purpose once the menus are up (`=fatal`: a fatal error); `GCN_CRASH_DIALOG=print`
+prints the dialog's text instead of showing it, `=0` shows nothing.
+
 ## The guest heap
 
 The SDK's OSAlloc keeps no record of who owns a cell, so when a game panics on a failed

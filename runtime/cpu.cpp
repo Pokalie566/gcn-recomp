@@ -67,8 +67,11 @@ void fatal(const char* fmt, ...) {
     }
     plat_backtrace_print();
     fflush(stderr);
+    if (g_fatal_hook) g_fatal_hook(msg);
     abort();
 }
+
+void (*g_fatal_hook)(const char* msg);
 
 // ---------------------------------------------------------------------------
 // Memory: reserve 1GB, commit RAM at 0 and locked cache at 0x20000000.
