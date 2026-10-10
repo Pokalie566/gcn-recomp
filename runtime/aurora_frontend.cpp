@@ -34,6 +34,14 @@ static int g_dump_every;
 static void dump(const char* name);
 void aurora_dump_frame(uint32_t frame) {
     if (!g_dump_dir || !g_dump_every || frame % g_dump_every) return;
+    // GCN_DUMP_RANGE=a-b: only those frames, as with the OpenGL renderer.
+    static uint32_t lo = 0, hi = ~0u;
+    static const bool parsed = [] {
+        if (const char* r = getenv("GCN_DUMP_RANGE")) sscanf(r, "%u-%u", &lo, &hi);
+        return true;
+    }();
+    (void)parsed;
+    if (frame < lo || frame > hi) return;
     char name[32];
     snprintf(name, sizeof(name), "frame_%05u", frame);
     dump(name);

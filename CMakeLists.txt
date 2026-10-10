@@ -502,6 +502,7 @@ function(gcn_add_game)
       GIT_TAG 40cf48fce6ce85366608596bae018c6188f2b2e7   # 2026-10-09
       # Fixes not yet upstream, one patch each (patches/aurora-*.patch).
       PATCH_COMMAND git apply --ignore-whitespace ${GCN_RECOMP_DIR}/patches/aurora-srtg-lit-color.patch
+                    ${GCN_RECOMP_DIR}/patches/aurora-blocking-pipelines.patch
       EXCLUDE_FROM_ALL)
     FetchContent_MakeAvailable(aurora)
     set(AURORA_SOURCES ${CORE_SOURCES} ${RT}/aurora_frontend.cpp ${RT}/gx/aurora_bridge.cpp ${RT}/png.cpp)

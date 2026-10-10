@@ -301,7 +301,6 @@ void load_bp(uint32_t w) {
     case 0x00:   // gen mode. Culling both faces, which Aurora does not take, draws no triangle.
         g_cull_all = ((v >> 14) & 3) == 3;
         if (g_cull_all) v &= ~(3u << 14);
-        if (getenv("GCN_NOCULL")) v &= ~(3u << 14);   // diagnostics: draw both faces
         break;
     case 0x45:   // draw done
         drain();
@@ -326,8 +325,8 @@ void load_bp(uint32_t w) {
         const uint32_t sw = (g_bp[0x4A] & 0x3FF) + 1, sh = ((g_bp[0x4A] >> 10) & 0x3FF) + 1;
         const bool half = (v >> 9) & 1;
         g_copies++;
-        if (g_frametime) fprintf(stderr, "[copy] f%u %ux%u@%u,%u half %d fmt %X depth %d clear %d dest %06X\n", g_frames_submitted.load(), sw, sh, x, y, half,
-                                 copy_format(v, (g_bp[0x43] & 7) == 3), (g_bp[0x43] & 7) == 3, (v >> 11) & 1, (g_bp[0x4B] & 0x1FFFFF) << 5);
+        if (g_frametime) fprintf(stderr, "[copy] f%u after draw %u: %ux%u@%u,%u half %d fmt %X depth %d clear %d cmode0 %06X dest %06X\n", g_frames_submitted.load(), g_draws, sw, sh, x, y, half,
+                                 copy_format(v, (g_bp[0x43] & 7) == 3), (g_bp[0x43] & 7) == 3, (v >> 11) & 1, g_bp[0x41], (g_bp[0x4B] & 0x1FFFFF) << 5);
         const bool depth = (g_bp[0x43] & 7) == 3;
         Out().cmd(GX_AURORA_LOAD_COPY_SRC).u32(x).u32(y).u32(sw).u32(sh);
         Out().cmd(GX_AURORA_LOAD_COPY_DST).u32(half ? sw / 2 : sw).u32(half ? sh / 2 : sh).u32(copy_format(v, depth)).u8(0);
@@ -366,8 +365,6 @@ uint32_t parse(const uint8_t* data, uint32_t len, bool partial_ok) {
             if (avail < 5) goto partial;
             need = 5 + 4 * (((be32(p + 1) >> 16) & 0xF) + 1);
             if (avail < need) goto partial;
-            for (uint32_t i = 0, a = be32(p + 1) & 0xFFFF; i < (need - 5) / 4; i++, a++)   // kept for diagnostics
-                if (a >= 0x1000 && a < 0x1100) g_state.xf_regs[a - 0x1000] = be32(p + 5 + 4 * i);
             pass(p, need);
             pos += need;
             continue;
@@ -414,27 +411,10 @@ uint32_t parse(const uint8_t* data, uint32_t len, bool partial_ok) {
                     load_textures();
                     g_tex_ms += ms_since(t2);
                 }
-                // GCN_WHITE=<gen mode, hex>: draws made with that gen mode come out white and
-                // opaque (one TEV stage), to tell their geometry from their TEV. Diagnostics.
-                static const uint32_t white = getenv("GCN_WHITE") ? (uint32_t)strtoul(getenv("GCN_WHITE"), nullptr, 16) : ~0u;
-                static const uint32_t white_arg = getenv("GCN_WHITE_ARG") ? (uint32_t)atoi(getenv("GCN_WHITE_ARG")) : 12;
-                const bool whiten = g_bp[0x00] == white;
-                if (whiten) {
-                    Out().u8(GX_LOAD_BP_REG).u32(0x00u << 24 | (g_bp[0x00] & ~(0xFu << 10)));
-                    Out().u8(GX_LOAD_BP_REG).u32(0xC0u << 24 | 0x08FFF0 | white_arg);
-                    Out().u8(GX_LOAD_BP_REG).u32(0xC1u << 24 | 0x08FFE0);
-                }
                 pass(p, need);
-                if (whiten)
-                    for (uint32_t r : {0x00u, 0xC0u, 0xC1u}) Out().u8(GX_LOAD_BP_REG).u32(r << 24 | g_bp[r]);
                 g_draws++;
                 g_vtx_bytes += need;
                 static const uint32_t drawlog = getenv("GCN_DRAWLOG") ? (uint32_t)atoi(getenv("GCN_DRAWLOG")) : ~0u;
-                if (g_frames_submitted.load() >= drawlog && g_bp[0x00] == 0x004C14)
-                    fprintf(stderr, "[cone] tex3 %06X img0 %06X mode0 %06X mode1 %06X texgen %08X %08X %08X %08X post %08X %08X %08X %08X mtxidx %08X %08X numtex %u dualtex %08X\n",
-                            (g_bp[0x97] & 0x1FFFFF) << 5, g_bp[0x8B], g_bp[0x83], g_bp[0x87], g_state.xf_regs[0x40], g_state.xf_regs[0x41],
-                            g_state.xf_regs[0x42], g_state.xf_regs[0x43], g_state.xf_regs[0x50], g_state.xf_regs[0x51], g_state.xf_regs[0x52],
-                            g_state.xf_regs[0x53], g_state.xf_regs[0x18], g_state.xf_regs[0x19], g_state.xf_regs[0x3F], g_state.xf_regs[0x12]);
                 if (g_frames_submitted.load() >= drawlog)
                     fprintf(stderr, "[draw] f%u %02X x%u vsz %u vcd %08X %08X vat %08X %08X %08X tex0 %06X img0 %06X mode0 %06X tev %06X ind %06X tex1 %06X img1 %06X tex2 %06X img2 %06X blend %06X zmode %06X\n",
                             g_frames_submitted.load(), cmd, be16(p + 1), vertex_size_of(cmd & 7), g_cp[0x50], g_cp[0x60], g_cp[0x70 + (cmd & 7)],
@@ -485,6 +465,9 @@ uint32_t vertex_size(int vat) { return vertex_size_of(vat); }
 
 // The first frame's recording, before the game issues anything.
 void aurora_bridge_start() {
+    // A draw waits for its pipeline, as on the console: no geometry missing from a frame the
+    // first time a shader is needed (it is skipped otherwise, until compiled).
+    aurora_set_pipeline_blocking(true);
     while (!aurora_begin_frame()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
 }
 
