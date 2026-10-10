@@ -5,7 +5,8 @@
 //      game project's tables were written for;
 //   2. extract main.dol;
 //   3. run the recompiler (recomp/recomp.py) with the project's tables and symbols;
-//   4. compile the C it writes, in parallel, and link it as the module.
+//   4. compile the C it writes, in parallel, and link it as the module;
+//   5. keep a copy of the disc (disc.h), so that the player's image is no longer needed.
 //
 // What it needs ships with the app (prepare_sources): the recompiler, the tables, the symbol
 // table, the runtime headers the generated code includes. What it needs from the machine is
@@ -17,6 +18,7 @@
 #pragma once
 #include <functional>
 #include <string>
+#include <vector>
 
 struct PrepareSources {
     std::string recompiler;   // the directory holding recomp.py
@@ -33,6 +35,8 @@ PrepareSources prepare_sources();
 // (versions.h). False, with the reason, if the image cannot be read or is not a version this
 // was made for; `verdict`, if given, has the reason or the version, ready for ui_trf.
 struct DiscVerdict;
+struct DiscVersion;
+std::vector<DiscVersion> prepare_versions();   // the game's versions.txt (versions.h)
 bool prepare_check_disc(const char* iso, std::string* dol_sha1, std::string* err, DiscVerdict* verdict = nullptr);
 
 // Where the module prepared from a main.dol of this SHA-1 is, ready or not.
@@ -41,9 +45,13 @@ std::string prepare_module_path(const std::string& dol_sha1);
 // Whether the tools are there: a C compiler and python3. `missing` says which are not.
 bool prepare_tools_present(std::string* missing);
 
+// Where preparing keeps its copy of the disc (disc_copy_ciso): the image to play from then on.
+std::string prepare_disc_copy_path(const std::string& dol_sha1);
+
 // Prepares the game from `iso`, reporting progress (0..1) and what it is doing. On success
-// `module` is the path to load. A log of the tools' output is kept beside the result.
-bool prepare_game(const char* iso, std::string* module, std::string* err,
+// `module` is the path to load and `disc_copy` (if given) the copy of the disc. Beside the
+// module, a log of the tools' output and disc.txt: the disc's ID and the whole image's SHA-1.
+bool prepare_game(const char* iso, std::string* module, std::string* disc_copy, std::string* err,
                   const std::function<void(float, const std::string&)>& progress);
 
 // What a frontend without a launcher does at startup: load the game module -- a development

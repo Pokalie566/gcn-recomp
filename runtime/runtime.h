@@ -1,6 +1,7 @@
 // Internal runtime interfaces (C++).
 #pragma once
 #include "recomp.h"
+#include "disc.h"
 #include <cstdint>
 #include <ctime>
 #include <cstdio>
@@ -148,7 +149,7 @@ const char* func_containing(uint32_t addr, uint32_t* start);
 
 // ---- hw modules ----
 void vi_init(); uint16_t vi_read16(uint32_t off); void vi_write16(uint32_t off, uint16_t v);
-void di_init(const char* iso_path); uint32_t di_read32(uint32_t off); void di_write32(uint32_t off, uint32_t v);
+uint32_t di_read32(uint32_t off); void di_write32(uint32_t off, uint32_t v);
 void si_init(); uint32_t si_read32(uint32_t off); void si_write32(uint32_t off, uint32_t v);
 void exi_init(); uint32_t exi_read32(uint32_t off); void exi_write32(uint32_t off, uint32_t v);
 void ai_init(); uint32_t ai_read32(uint32_t off); void ai_write32(uint32_t off, uint32_t v);
@@ -158,5 +159,4 @@ uint16_t pe_read16(uint32_t off); void pe_write16(uint32_t off, uint16_t v);
 void gp_write8(uint8_t v); void gp_write16(uint16_t v); void gp_write32(uint32_t v);
 uint32_t efb_peek(uint32_t addr); void efb_poke(uint32_t addr, uint32_t v);
 
-// iso reading
-bool iso_read(uint64_t offset, void* dst, uint32_t len);
+// the disc image: disc.h (disc_open, iso_read)

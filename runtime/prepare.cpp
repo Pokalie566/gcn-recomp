@@ -44,7 +44,8 @@ static uint32_t be32(const uint8_t* p) { return (uint32_t)p[0] << 24 | (uint32_t
 // main.dol as the disc stores it: header, then its sections up to the furthest one's end.
 static bool read_dol(const char* iso, std::vector<uint8_t>& dol, std::string* disc_id, bool* gamecube, std::string* err) {
     if (!plat_readable(iso)) { *err = std::string("cannot read the disc image ") + iso; return false; }
-    di_init(iso);
+    *gamecube = false;
+    if (!disc_open(iso)) return true;   // not a disc image at all
     uint8_t hdr[0x440];
     if (!iso_read(0, hdr, sizeof(hdr))) { *err = "cannot read the disc header"; return false; }
     *disc_id = std::string((const char*)hdr, 6);
@@ -131,7 +132,9 @@ bool prepare_tools_present(std::string* missing) {
     return missing->empty();
 }
 
-bool prepare_game(const char* iso, std::string* module, std::string* err,
+std::string prepare_disc_copy_path(const std::string& dol_sha1) { return save_path("disc/" + dol_sha1.substr(0, 12) + ".ciso"); }
+
+bool prepare_game(const char* iso, std::string* module, std::string* disc_copy, std::string* err,
                   const std::function<void(float, const std::string&)>& progress) {
     auto say = [&](float f, const std::string& what) { if (progress) progress(f, what); };
     say(0.0f, "checking the disc");
@@ -190,7 +193,7 @@ bool prepare_game(const char* iso, std::string* module, std::string* err,
     say(0.25f, "compiling");
     if (!game_module_build(sources, {src.include, (work / "gen").string()}, (work / game_module_filename()).string(),
                            src.import_lib, log, err, [&](size_t done, size_t total) {
-                               say(0.25f + 0.70f * (float)done / (float)total,
+                               say(0.25f + 0.60f * (float)done / (float)total,
                                    "compiling " + std::to_string(done) + "/" + std::to_string(total));
                            }))
         return false;
@@ -198,6 +201,22 @@ bool prepare_game(const char* iso, std::string* module, std::string* err,
     // Only the module and the log are kept: the generated C and the objects are the game's
     // code, and nothing needs them once it is linked.
     fs::remove_all(work / "gen", ec);
+
+    // And the disc, so that the player's own image is no longer needed (disc.h); with the
+    // whole image's SHA-1, which says whether it was Redump's dump. Preparing again from
+    // that copy keeps it, and what was said about the original.
+    const std::string copy = prepare_disc_copy_path(sha1);
+    if (fs::weakly_canonical(iso, ec) == fs::weakly_canonical(copy, ec)) {
+        fs::copy_file(final_dir / "disc.txt", work / "disc.txt", ec);
+    } else {
+        std::string iso_sha1;
+        if (!disc_copy_ciso(copy, &iso_sha1, err, [&](float f) { say(0.85f + 0.14f * f, "copying the disc"); }))
+            return false;
+        std::ofstream(work / "disc.txt") << id << " " << iso_sha1 << "\n";
+        for (auto it = fs::directory_iterator(fs::path(copy).parent_path(), ec); !ec && it != fs::directory_iterator(); it.increment(ec))
+            if (it->path() != fs::path(copy)) fs::remove(it->path(), ec);   // an earlier disc's
+    }
+    if (disc_copy) *disc_copy = copy;
     fs::remove_all(final_dir, ec);
     fs::rename(work, final_dir, ec);
     if (ec) { *err = "cannot move the prepared game into place: " + ec.message(); return false; }
@@ -221,7 +240,7 @@ bool game_module_ensure(const char* iso, bool force) {
     if (path.empty()) {
         fprintf(stderr, "[prepare] preparing " GCN_GAME_TITLE " from %s (once)\n", iso);
         int last = -1;
-        const bool ok = prepare_game(iso, &path, &err, [&](float f, const std::string& what) {
+        const bool ok = prepare_game(iso, &path, nullptr, &err, [&](float f, const std::string& what) {
             const int pct = (int)(f * 100);
             if (pct != last) { last = pct; fprintf(stderr, "\r[prepare] %3d%%  %-30s", pct, what.c_str()); }
         });

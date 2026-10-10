@@ -10,9 +10,12 @@
 #include "ui/pick_file.h"
 #include "versions.h"
 #include "ui/ui.h"
+#include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <thread>
+
+namespace fs = std::filesystem;
 
 namespace {
 
@@ -92,7 +95,7 @@ struct Preparation {
     std::thread thread;
     bool done = false, ok = false;
     float progress = 0;
-    std::string step, error;
+    std::string step, error, copy;
 };
 Preparation g_prep;
 
@@ -133,6 +136,12 @@ void check(const LauncherEnv& env, const Settings& cur) {
     if (disc_ok) {
         if (l.preparing) l.checks.push_back({"Prepared", "busy", l.progress_text});
         else if (!g_module.empty()) l.checks.push_back({"Prepared", "ok", ui_tr("Ready to play")});
+        // What the whole image's SHA-1, read while preparing, says about the dump: information only.
+        std::string id, iso_sha1;
+        if (!g_module.empty() && (std::ifstream(fs::path(g_module).parent_path() / "disc.txt") >> id >> iso_sha1)) {
+            const DiscVerdict d = versions_dump_info(prepare_versions(), id, iso_sha1);
+            l.checks.push_back({"Dump", "ok", ui_trf(d.message, d.arg)});
+        }
         else if (!g_failed.empty()) l.checks.push_back({"Prepared", "fail", g_failed});
         else l.checks.push_back({"Prepared", "warn", ui_tr("Not yet: Prepare builds the game from your disc, once")});
     }
@@ -175,8 +184,8 @@ void check(const LauncherEnv& env, const Settings& cur) {
 void prepare_start(const std::string& iso) {
     g_prep.done = false;
     g_prep.thread = std::thread([iso] {
-        std::string module, err;
-        const bool ok = prepare_game(iso.c_str(), &module, &err, [](float f, const std::string& what) {
+        std::string module, copy, err;
+        const bool ok = prepare_game(iso.c_str(), &module, &copy, &err, [](float f, const std::string& what) {
             std::lock_guard<std::mutex> lk(g_prep.m);
             g_prep.progress = f;
             g_prep.step = what;
@@ -184,6 +193,7 @@ void prepare_start(const std::string& iso) {
         std::lock_guard<std::mutex> lk(g_prep.m);
         g_prep.ok = ok;
         g_prep.error = err;
+        g_prep.copy = copy;
         g_prep.done = true;
     });
 }
@@ -349,7 +359,8 @@ bool launcher_run(LauncherEnv& env, Settings& cur) {
                 g_prep.thread.join();
                 g_l.preparing = false;
                 if (!g_prep.ok) g_failed = g_prep.error;
-                check(env, cur);
+                if (g_prep.ok && g_prep.copy != cur.iso) set_disc(g_prep.copy);   // the player's image is no longer needed
+                else check(env, cur);
                 // The Prepare button is gone: the focus goes to Play, or the assistant's Next.
                 if (!ui_setup_open()) ui_show_launcher(cur, g_l);
             } else {

@@ -65,5 +65,5 @@ DiscVerdict versions_dump_info(const std::vector<DiscVersion>& table, const std:
                                const std::string& iso_sha1) {
     for (const auto& v : table)
         if (v.id == id && !v.iso_sha1.empty() && v.iso_sha1 == iso_sha1) return {true, "Matches Redump ({})", v.region};
-    return {false, "Not a raw Redump dump (compressed, trimmed or another dump): it plays just as well", ""};
+    return {false, "Not a raw Redump dump (compressed or trimmed): it plays just as well", ""};
 }

@@ -1,57 +1,13 @@
-// DVD Interface: command execution against the ISO image, incl. audio stream commands.
+// DVD Interface: command execution against the disc image (disc.h), incl. audio stream commands.
 #include "../runtime.h"
 #include "../platform.h"
 
-static PlatFile* g_iso;
 static uint32_t g_disr, g_dicvr, g_cmd[3], g_dimar, g_dilen, g_dicr, g_diimm, g_dicfg;
 static bool g_busy;
 
 #include "dtk.h"
 #include <algorithm>
 #include <vector>
-
-// The image is a plain .iso, or a CISO: a 0x8000-byte header -- "CISO", a little-endian
-// block size, then one byte per block saying whether that block is stored -- followed by
-// the stored blocks in order. A block that is not stored reads as zero. Dolphin writes
-// CISO for the trailing zero space of a disc, which is most of a Metroid Prime image.
-static uint32_t g_ciso_block;             // 0 for a plain .iso
-static std::vector<int32_t> g_ciso_map;   // disc block -> stored block, -1 if absent
-
-bool iso_read(uint64_t offset, void* dst, uint32_t len) {
-    if (!g_ciso_block) return plat_read_at(g_iso, offset, dst, len);
-    uint8_t* p = (uint8_t*)dst;
-    while (len) {
-        const uint64_t blk = offset / g_ciso_block;
-        const uint32_t off = (uint32_t)(offset % g_ciso_block);
-        const uint32_t n = (uint32_t)std::min<uint64_t>(len, g_ciso_block - off);
-        const int32_t stored = blk < g_ciso_map.size() ? g_ciso_map[blk] : -1;
-        if (stored < 0) memset(p, 0, n);
-        else if (!plat_read_at(g_iso, 0x8000 + (uint64_t)stored * g_ciso_block + off, p, n)) return false;
-        p += n;
-        offset += n;
-        len -= n;
-    }
-    return true;
-}
-
-// Opens a disc image, closing the one before: a launcher reads one disc after another.
-void di_init(const char* iso_path) {
-    plat_close(g_iso);
-    g_ciso_block = 0;
-    g_ciso_map.clear();
-    g_iso = plat_open_read(iso_path);
-    if (!g_iso) fatal("cannot open disc image %s", iso_path);
-    uint8_t hdr[0x8000];
-    if (plat_read_at(g_iso, 0, hdr, sizeof(hdr)) && memcmp(hdr, "CISO", 4) == 0) {
-        g_ciso_block = (uint32_t)hdr[4] | ((uint32_t)hdr[5] << 8) | ((uint32_t)hdr[6] << 16) | ((uint32_t)hdr[7] << 24);
-        if (!g_ciso_block) fatal("CISO image %s has a zero block size", iso_path);
-        g_ciso_map.assign(sizeof(hdr) - 8, -1);
-        int32_t stored = 0;
-        for (size_t i = 0; i < g_ciso_map.size(); i++)
-            if (hdr[8 + i] == 1) g_ciso_map[i] = stored++;
-        LOG(LOG_DVD, "CISO image: %u-byte blocks, %d stored", g_ciso_block, stored);
-    }
-}
 
 static void di_update_irq() {
     bool irq = ((g_disr & 0x10) && (g_disr & 0x08)) || ((g_disr & 0x04) && (g_disr & 0x02)) ||

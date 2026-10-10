@@ -7,7 +7,8 @@ static uint32_t be32(const uint8_t* p) { return ((uint32_t)p[0] << 24) | ((uint3
 void vi_init(); void si_init(); void exi_init(); void ai_init(); void dsp_init(); void cp_init();
 
 uint32_t boot_load(const char* iso_path) {
-    di_init(iso_path);
+    std::string err;
+    if (!disc_open(iso_path, &err)) fatal("cannot open disc image %s: %s", iso_path, err.c_str());
     uint8_t hdr[0x440];
     if (!iso_read(0, hdr, sizeof(hdr))) fatal("cannot read disc header");
     uint32_t dol_off = be32(hdr + 0x420), fst_off = be32(hdr + 0x424), fst_size = be32(hdr + 0x428), fst_max = be32(hdr + 0x42C);
