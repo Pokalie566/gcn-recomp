@@ -150,10 +150,8 @@ void check(const LauncherEnv& env, const Settings& cur) {
     for (const CardFile& f : card_files(card_path())) saves += f.game == GCN_DISC_ID;
     l.checks.push_back({"Memory card", "ok", !plat_readable(card_path().c_str()) ? ui_tr("New, made at the first save")
                                              : saves == 0 ? ui_tr("No save yet") : saves == 1 ? ui_tr("1 save") : ui_trf("{} saves", std::to_string(saves))});
-    size_t dds = 0;
-    const size_t textures = gx::texture_pack_count(&dds);
-    if (!textures && !dds) l.checks.push_back({"Textures", "ok", ui_tr("The game's own (no pack in textures/)")});
-    else if (dds) l.checks.push_back({"Textures", "warn", ui_trf("{} in the pack", std::to_string(textures)) + ui_trf(", {} DDS skipped (PNG only)", std::to_string(dds))});
+    const size_t textures = gx::texture_pack_count();
+    if (!textures) l.checks.push_back({"Textures", "ok", ui_tr("The game's own (no pack in textures/)")});
     else l.checks.push_back({"Textures", "ok", ui_trf("{} in the pack", std::to_string(textures)) + (cur.textures ? "" : ui_tr(", turned off in Settings"))});
     l.can_play = disc_ok && !g_module.empty() && !l.preparing;
     l.can_prepare = disc_ok && g_module.empty() && tools && !l.preparing;

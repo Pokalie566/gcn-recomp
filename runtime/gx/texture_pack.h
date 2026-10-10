@@ -15,12 +15,16 @@
 // (texel-based offsets), only its storage grows. Where the game uses mipmaps, the
 // replacement's are generated.
 //
-// Not supported: DDS files, and a pack's own mipmap files (_mip1...), which are ignored in
-// favour of generated ones; "_arb" textures lose their arbitrary mipmaps the same way.
+// PNG or DDS: uncompressed 32-bit, DXT1, DXT3 and DXT5 (BC1 to BC3, in a DX10 header too);
+// a PNG wins over a DDS of the same name. Not supported: BC7 DDS, which is reported and left
+// out, and a pack's own mipmap files (_mip1..., and the levels inside a DDS), which are
+// ignored in favour of generated ones; "_arb" textures lose their arbitrary mipmaps the
+// same way.
 #pragma once
 #include "render.h"
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace gx {
 
@@ -50,8 +54,14 @@ void texture_pack_enable_dump();
 // what they have until texture_cache_clear.
 void texture_pack_set_enabled(bool on);
 
-// How many textures the pack has, and how many DDS files it holds that are not read.
-size_t texture_pack_count(size_t* dds);
+// How many textures the pack has.
+size_t texture_pack_count();
+
+// Forgets the pack, to be looked for again at its next use (for a test that changes it).
+void texture_pack_reset();
+
+// A DDS file's top level as RGBA8. False, with the reason, for a format it does not read.
+bool dds_decode(const uint8_t* data, size_t size, int* w, int* h, std::vector<uint32_t>* rgba, std::string* err);
 
 // For a renderer that writes the dumps: the directory, or null when not dumping.
 const char* texture_dump_dir();

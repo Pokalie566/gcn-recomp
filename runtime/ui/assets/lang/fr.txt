@@ -97,7 +97,6 @@ No save yet = Aucune sauvegarde
 {} saves = {} sauvegardes
 The game's own (no pack in textures/) = Celles du jeu (pas de pack dans textures/)
 {} in the pack = {} dans le pack
-, {} DDS skipped (PNG only) = , {} DDS ignorées (PNG seulement)
 , turned off in Settings = , désactivé dans les réglages
 Preparing: {} = Préparation : {}
 starting = démarrage
