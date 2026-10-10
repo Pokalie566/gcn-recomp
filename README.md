@@ -90,7 +90,7 @@ the Fira Sans font (SIL Open Font License, `runtime/ui/assets/fonts/OFL.txt`).
 
 **Texture packs** are Dolphin's: copy a pack's `<game id>` folder (Dolphin's
 `Load/Textures/<game id>`) to `textures/` in the working directory and it is used as it is
--- same names, same `$` wildcards, any resolution. PNG only for now. `GCN_TEXTURES=<dir>`
+-- same names, same `$` wildcards, any resolution. PNG or DDS (uncompressed, DXT1/3/5; not BC7). `GCN_TEXTURES=<dir>`
 looks elsewhere. See `runtime/gx/texture_pack.h`.
 
 Keyboard, by default: arrows the control stick, X A, Z B, C X, S Y, D Z, Q L, W R, Enter
