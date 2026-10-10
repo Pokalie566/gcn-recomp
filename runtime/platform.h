@@ -19,9 +19,6 @@ void plat_backtrace_print();
 void plat_install_crash_handlers(void (*on_interrupt)(), void (*on_fault)(const void* addr, int sig));
 // Hard-exit after `seconds` no matter what, so a crash handler can never hang.
 void plat_watchdog(int seconds, int exit_code);
-// Record a fatal message where the platform keeps crash reports, which on Android is the
-// one place the app's own logging cannot overwrite it. See the definition.
-void plat_record_fatal(const char* msg);
 // Exit immediately without running destructors or flushing other threads' buffers.
 [[noreturn]] void plat_exit_now(int code);
 
@@ -45,11 +42,6 @@ bool plat_replace_file(const char* from, const char* to);
 // First entry in `dir` whose name ends with `suffix` (case-insensitive), or "".
 std::string plat_find_file(const char* dir, const char* suffix);
 
-// A read-only file supporting concurrent positional reads.
-struct PlatFile;
-PlatFile* plat_open_read(const char* path);
-bool plat_read_at(PlatFile* f, uint64_t offset, void* dst, uint32_t len);
-void plat_close(PlatFile* f);
 
 // The directory of the running executable, without a trailing separator.
 std::string plat_executable_path();

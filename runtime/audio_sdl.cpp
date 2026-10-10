@@ -1,5 +1,4 @@
-// SDL device output for the portable mix in audio.cpp. Desktop only; Android uses
-// audio_aaudio.cpp, which is the same handful of lines against a different API.
+// SDL device output for the portable mix in audio.cpp.
 #include "runtime.h"
 #include <SDL3/SDL.h>
 #include <vector>

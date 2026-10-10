@@ -11,15 +11,6 @@
 
 GameModule g_game;
 
-#ifdef GCN_STATIC_GAME
-// Linked in: the table is there before main runs.
-extern "C" void orig_OSSaveContext(CPU* c);
-static const bool g_static_game = [] {
-    g_game = {g_recomp_funcs, g_recomp_func_count, g_recomp_code_base, g_recomp_code_end, orig_OSSaveContext};
-    return true;
-}();
-#endif
-
 std::string game_module_filename() {
 #if defined(_WIN32)
     return GCN_GAME_NAME "_game.dll";

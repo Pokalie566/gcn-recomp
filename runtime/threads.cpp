@@ -47,7 +47,6 @@ static std::unordered_map<uint32_t, Binding> g_bindings;
 static std::vector<HostThread*> g_threads;
 static std::atomic<bool> g_quit{false};
 
-HostThread* host_current() { return t_self; }
 CPU* cpu_current() { return t_self ? &t_self->cpu : nullptr; }
 
 // OSContext layout

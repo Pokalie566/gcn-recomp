@@ -146,50 +146,6 @@ bool plat_replace_file(const char* from, const char* to) {
     return MoveFileExA(from, to, MOVEFILE_REPLACE_EXISTING) != 0;
 }
 
-// Positional reads on a handle opened for overlapped I/O: each read carries its own
-// offset, so concurrent DVD reads from guest threads and the audio callback are safe.
-struct PlatFile { HANDLE h; };
-
-PlatFile* plat_open_read(const char* path) {
-    HANDLE h = CreateFileA(path, GENERIC_READ, FILE_SHARE_READ, nullptr, OPEN_EXISTING,
-                           FILE_FLAG_OVERLAPPED, nullptr);
-    if (h == INVALID_HANDLE_VALUE) return nullptr;
-    return new PlatFile{h};
-}
-
-void plat_close(PlatFile* f) {
-    if (f) CloseHandle(f->h);
-    delete f;
-}
-
-bool plat_read_at(PlatFile* f, uint64_t offset, void* dst, uint32_t len) {
-    if (!f) return false;
-    // One event per thread rather than per read: the game streams assets off the disc
-    // continuously, so this is a hot path. Each thread waits only on its own I/O.
-    static thread_local HANDLE t_event = nullptr;
-    if (!t_event) {
-        t_event = CreateEventA(nullptr, TRUE, FALSE, nullptr);
-        if (!t_event) return false;
-    }
-    uint8_t* out = (uint8_t*)dst;
-    uint32_t done = 0;
-    while (done < len) {
-        OVERLAPPED ov{};
-        ov.hEvent = t_event;
-        uint64_t off = offset + done;
-        ov.Offset = (DWORD)(off & 0xFFFFFFFFu);
-        ov.OffsetHigh = (DWORD)(off >> 32);
-        DWORD got = 0;
-        BOOL ok = ReadFile(f->h, out + done, len - done, &got, &ov);
-        if (!ok && GetLastError() == ERROR_IO_PENDING)
-            ok = GetOverlappedResult(f->h, &ov, &got, TRUE);
-        if (!ok || got == 0) return false;
-        done += got;
-    }
-    return true;
-}
-
-
 // ---- modules and processes ----
 std::string plat_executable_path() {
     char buf[MAX_PATH];
@@ -287,14 +243,7 @@ int plat_run(const std::vector<std::string>& argv, const char* log) {
 #include <sys/mman.h>
 #include <unistd.h>
 #include <pthread.h>
-#ifdef __ANDROID__
-// bionic has no execinfo.h; unwind by hand and symbolize with dladdr.
-#include <android/set_abort_message.h>
-#include <dlfcn.h>
-#include <unwind.h>
-#else
 #include <execinfo.h>
-#endif
 
 void* plat_reserve(size_t size) {
     void* p = mmap(nullptr, size, PROT_NONE, MAP_PRIVATE | MAP_ANON | MAP_NORESERVE, -1, 0);
@@ -305,41 +254,11 @@ bool plat_commit(void* base, size_t size) {
     return mprotect(base, size, PROT_READ | PROT_WRITE) == 0;
 }
 
-#ifdef __ANDROID__
-namespace {
-struct BacktraceState { void** frames; int count; int max; };
-
-_Unwind_Reason_Code bt_frame(struct _Unwind_Context* ctx, void* arg) {
-    auto* st = static_cast<BacktraceState*>(arg);
-    uintptr_t pc = _Unwind_GetIP(ctx);
-    if (pc) {
-        if (st->count >= st->max) return _URC_END_OF_STACK;
-        st->frames[st->count++] = reinterpret_cast<void*>(pc);
-    }
-    return _URC_NO_REASON;
-}
-}  // namespace
-
-void plat_backtrace_print() {
-    void* frames[64];
-    BacktraceState st{frames, 0, 64};
-    _Unwind_Backtrace(bt_frame, &st);
-    for (int i = 0; i < st.count; i++) {
-        Dl_info info{};
-        if (dladdr(frames[i], &info) && info.dli_sname)
-            fprintf(stderr, "  %2d %p %s\n", i, frames[i], info.dli_sname);
-        else
-            fprintf(stderr, "  %2d %p\n", i, frames[i]);
-    }
-    fflush(stderr);
-}
-#else
 void plat_backtrace_print() {
     void* bt[64];
     int n = backtrace(bt, 64);
     backtrace_symbols_fd(bt, n, 2);
 }
-#endif
 
 void plat_watchdog(int seconds, int exit_code) {
     static int s_code;
@@ -395,32 +314,6 @@ long plat_utc_offset_seconds() {
 bool plat_readable(const char* path) { return path && *path && access(path, R_OK) == 0; }
 
 bool plat_replace_file(const char* from, const char* to) { return rename(from, to) == 0; }
-
-struct PlatFile { int fd; };
-
-PlatFile* plat_open_read(const char* path) {
-    int fd = open(path, O_RDONLY);
-    if (fd < 0) return nullptr;
-    return new PlatFile{fd};
-}
-
-void plat_close(PlatFile* f) {
-    if (f) close(f->fd);
-    delete f;
-}
-
-bool plat_read_at(PlatFile* f, uint64_t offset, void* dst, uint32_t len) {
-    if (!f) return false;
-    uint8_t* out = (uint8_t*)dst;
-    uint32_t done = 0;
-    while (done < len) {
-        ssize_t r = pread(f->fd, out + done, len - done, (off_t)(offset + done));
-        if (r <= 0) return false;
-        done += (uint32_t)r;
-    }
-    return true;
-}
-
 
 // ---- modules and processes ----
 #include <dlfcn.h>
@@ -534,20 +427,3 @@ std::string plat_find_file(const char* dir, const char* suffix) {
     return {};
 }
 
-// Hand a fatal message to the platform's own crash record.
-//
-// stderr is not enough on Android. The app's stdout and stderr are piped into logcat,
-// and logcat is a 256 KiB ring: with `log_frames 1` in vr.txt the theater path alone
-// writes a line per display frame and laps the buffer in well under a minute, so by the
-// time a crash is noticed the message explaining it has been overwritten. That is not
-// hypothetical -- it is how the crash of 2026-10-06 lost its diagnostic entirely.
-//
-// The abort message goes somewhere else: the tombstone, and the `crash` log buffer,
-// neither of which the app's own logging can flush. It survives.
-void plat_record_fatal(const char* msg) {
-#ifdef __ANDROID__
-    android_set_abort_message(msg);
-#else
-    (void)msg;  // desktop stderr is a terminal or a file, not a ring that laps
-#endif
-}

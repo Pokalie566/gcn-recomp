@@ -12,7 +12,6 @@
 
 // From now on stderr goes to `path` too; a file already there is kept as <path>.old.log.
 void log_start(const std::string& path);
-const std::string& log_path();
 
 // The crash, `what` in a sentence: in the log, then the dialog. GCN_CRASH_DIALOG=print
 // prints the dialog's text instead of showing it (for a scripted check), =0 shows nothing.

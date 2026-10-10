@@ -10,7 +10,7 @@
 // Two things here fill that in:
 //
 //   heap_report()  walks the heaps out of guest memory -- totals, block counts, the largest
-//                  free block -- and is appended to every panic report, so a headset that
+//                  free block -- and is appended to every panic report, so a game that
 //                  died can still say whether the heap was exhausted or fragmented.
 //
 //   GCN_HEAP=1      keeps a table of live cells keyed by the return address of whoever called

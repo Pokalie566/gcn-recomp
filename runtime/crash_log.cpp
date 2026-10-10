@@ -63,8 +63,6 @@ void log_start(const std::string& path) {
     }).detach();
 }
 
-const std::string& log_path() { return g_log_path; }
-
 void crash_set_translator(std::string (*trf)(const std::string& english, const std::string& arg)) { g_trf = trf; }
 
 void crash_report(const char* what) {

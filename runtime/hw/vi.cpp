@@ -7,7 +7,6 @@ static uint64_t g_frame_start;
 static constexpr uint64_t FIELD_TICKS = (uint64_t)(TB_FREQ / 59.94);
 static constexpr int LINES_PER_FIELD = 263;
 std::atomic<uint32_t> g_vi_retrace_count{0};
-std::atomic<uint32_t> g_vi_xfb_addr{0};
 
 static void vi_update_irq() {
     bool any = false;
@@ -21,8 +20,6 @@ static void vi_update_irq() {
 static void vi_retrace() {
     g_frame_start = now_ticks();
     g_vi_retrace_count++;
-    uint32_t tfbl = ((uint32_t)g_vi[0x1C >> 1] << 16) | g_vi[0x1E >> 1];
-    g_vi_xfb_addr = (tfbl & 0x10000000) ? ((tfbl & 0xFFFFFF) << 5) : (tfbl & 0xFFFFFF);
     // Raise display interrupts 0 and 1 if enabled.
     for (int i = 0; i < 2; i++) {
         uint16_t& hi = g_vi[(0x30 + 4 * i) >> 1];

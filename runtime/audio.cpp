@@ -2,9 +2,8 @@
 // music (48 kHz DTK ADPCM read from the disc) into 48 kHz stereo.
 //
 // Everything here is portable. The device that pulls on it is not, so opening it lives
-// in a backend beside this file -- audio_sdl.cpp on the desktop, audio_aaudio.cpp on
-// Android -- each of which supplies audio_open() and calls audio_render() from whatever
-// callback its API hands it.
+// in a backend beside this file -- audio_sdl.cpp -- which supplies audio_open() and calls
+// audio_render() from the callback its API hands it.
 #include "runtime.h"
 #include "hw/dtk.h"
 #include <algorithm>

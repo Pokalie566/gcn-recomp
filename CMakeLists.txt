@@ -118,7 +118,7 @@ function(gcn_add_game)
     include(${RECOMP_GEN_DIR}/sources.cmake)
 
     # Objects, built position-independent: they become the module the runtime loads
-    # (runtime/game_module.h), and the Android app links them statically.
+    # (runtime/game_module.h).
     add_library(game_recomp OBJECT ${RECOMP_SOURCES})
     set_target_properties(game_recomp PROPERTIES POSITION_INDEPENDENT_CODE ON)
     _gcn_set_standards(game_recomp)

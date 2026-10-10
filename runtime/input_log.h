@@ -42,6 +42,3 @@ void input_log_end();
 // for `chan` and returns true; past the end the live controller takes over again and this
 // returns false. Either way the state the guest will see is recorded, when logging.
 bool input_pad_poll(int chan, PadState& s);
-
-// Whether a replay is in progress (loaded and not yet past its last poll).
-bool input_replay_active();

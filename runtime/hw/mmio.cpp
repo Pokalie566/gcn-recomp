@@ -170,16 +170,8 @@ uint32_t dma_fit(const char* engine, uint32_t pa, uint32_t len) {
     const uint32_t fit = addr >= RAM_SIZE ? 0u : std::min(len, RAM_SIZE - addr);
     if (fit == len) return fit;
     static int shown;
-    char msg[160];
-    snprintf(msg, sizeof(msg),
-             "%s DMA runs past main memory: %08X + %X bytes, RAM ends at %X (%u bytes dropped)",
-             engine, pa, len, RAM_SIZE, len - fit);
-    if (shown == 0) {
-        // The first one goes into the platform's crash record as well. If the guest does
-        // not survive what this corrupted, the tombstone then names the engine that did
-        // it -- which is the whole difficulty with this class of bug.
-        plat_record_fatal(msg);
-    }
-    if (shown++ < 16) fprintf(stderr, "[dma] %s\n", msg);
+    if (shown++ < 16)
+        fprintf(stderr, "[dma] %s DMA runs past main memory: %08X + %X bytes, RAM ends at %X (%u bytes dropped)\n",
+                engine, pa, len, RAM_SIZE, len - fit);
     return fit;
 }

@@ -68,13 +68,13 @@ These, the disc image, the volume, whether a texture pack is used and the pad bi
 **settings**, kept in `saves/settings.ini` (`runtime/settings.h`), which the first run
 writes with the defaults. An option on the command line overrides its setting for that run
 only. **Esc** (or a controller's Back) pauses, with a menu over the frozen frame
-(`runtime/ui`, drawn with [RmlUi](https://github.com/mikke89/RmlUi)): resume, settings --
+(`runtime/ui`, drawn with [RmlUi](https://github.com/mikke89/RmlUi) by Aurora): resume, settings --
 graphics, controls with every pad button rebindable, audio -- and quit. A setting changed
 there applies at once and is saved. The menus' documents are `runtime/ui/assets`; a game
 project gives them its look with its own `theme.rcss` (gcn_add_game's `UI`).
 
-`-DGCN_APP=ON` builds the game as an app to hand out: no disc and no game code in it, SDL2
-built in, and on macOS a `<APP_NAME>.app` whose Resources hold what preparing the game on
+`-DGCN_APP=ON` builds the game as an app to hand out: no disc and no game code in it, SDL3
+and Aurora's other libraries built in, and on macOS a `<APP_NAME>.app` whose Resources hold what preparing the game on
 the player's machine needs. It opens on a launcher (`runtime/ui/launcher.h`) that checks
 everything, prepares the game from the disc the player drops on it, and plays; the player's
 state goes to `~/Library/Application Support/<APP_NAME>`. Its first launch runs an assistant
@@ -84,17 +84,19 @@ packs); its settings have Controller, Textures (pack by pack) and Disc pages bes
 game, without `GCN_APP`, the launcher is there too (`--no-launcher` skips it).
 
 The menus use RmlUi (MIT) and FreeType (the FreeType License: portions of this software are
-copyright © The FreeType Project, www.freetype.org), both fetched and built by CMake, and
-the Fira Sans font (SIL Open Font License, `runtime/ui/assets/fonts/OFL.txt`).
+copyright © The FreeType Project, www.freetype.org), both built with Aurora, and the Fira
+Sans font (SIL Open Font License, `runtime/ui/assets/fonts/OFL.txt`).
 
 **Texture packs** are Dolphin's: copy a pack's `<game id>` folder (Dolphin's
-`Load/Textures/<game id>`) to `textures/` in the working directory and it is used as it is
--- same names, same `$` wildcards, any resolution. PNG or DDS (uncompressed, DXT1/3/5; not BC7). `GCN_TEXTURES=<dir>`
-looks elsewhere. See `runtime/gx/texture_pack.h`.
+`Load/Textures/<game id>`) to `textures/` in the save folder (`saves/` in a run from the
+repository) and it is used as it is
+-- same names, same `$` wildcards, any resolution. PNG or DDS (BC1, BC3 and BC7 included),
+loaded by Aurora. `GCN_TEXTURES=<dir>` looks elsewhere. See `runtime/gx/packs.h`.
 
 Keyboard, by default: arrows the control stick, X A, Z B, C X, S Y, D Z, Q L, W R, Enter
-Start, I J K L the d-pad. A controller works as it is plugged in. Both are bound in
-settings.ini, `bind.<action> = key:<SDL key name>, pad:<SDL button>, axis:+<axis>`. With
+Start, I J K L the d-pad. A controller works as it is plugged in, with Aurora's mapping for
+its kind. Both are rebound on the Controls page, and saved by Aurora (`aurora/` in the save
+folder; `runtime/pad_bindings.h`). With
 `--mouse-aim` the cursor is captured; F1 releases it and a click takes it back. `mouse_sens`
 scales the mouse (1 by default; `GCN_MOUSE_SENS` for a run). A game whose C stick needs other settings gives its own defaults at
 compile time on its target -- `GCN_MOUSE_DEADZONE` (the deflection it starts to react at,

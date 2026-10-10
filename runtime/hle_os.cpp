@@ -112,8 +112,7 @@ static void guest_backtrace(CPU* c, std::string& out, int max_frames) {
 //
 // So the body is replaced by this: say what the game was going to say, with the guest's own
 // backtrace, and stop. Stopping rather than spinning is the point -- the game is over either
-// way, and a process that dies explaining itself beats one that freezes. fatal() puts the
-// first line somewhere the app's own logging cannot lap it (see plat_record_fatal).
+// way, and a process that dies explaining itself beats one that freezes.
 extern "C" void hle_OSPanic(CPU* c) {
     // Both of these are arbitrary guest text -- the message usually ends in a newline, and
     // neither pointer is trustworthy on the path that gets here. Flattened, so that the one
@@ -133,16 +132,6 @@ extern "C" void hle_OSPanic(CPU* c) {
     // The heaps too: the panic this was written for is an allocation failing, and the
     // question that follows is whether the heap was exhausted or merely fragmented.
     heap_report(report);
-    fprintf(stderr, "%s", report.c_str());
-    // And once more where a log ring cannot lap it. On a headset the only reader is adb
-    // after the fact, by which time a session's worth of logging has usually pushed the
-    // backtrace out; fatal() preserves its one line in the crash record but has nowhere to
-    // put sixteen more. Best effort -- a panic that cannot write a file still has to report.
-    const std::string path = (g_save_dir ? std::string(g_save_dir) : std::string(".")) + "/panic.txt";
-    if (FILE* f = fopen(path.c_str(), "wb")) {
-        fwrite(report.data(), 1, report.size(), f);
-        fclose(f);
-        fprintf(stderr, "panic report written to %s\n", path.c_str());
-    }
+    fprintf(stderr, "%s", report.c_str());   // into the log (crash_log.h) with the rest
     fatal("guest panic: %s:%u: %s", file.c_str(), line, msg.c_str());
 }

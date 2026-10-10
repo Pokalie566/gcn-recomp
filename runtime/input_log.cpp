@@ -180,11 +180,6 @@ bool input_replay_load(const std::string& dir, std::string& card_out) {
     return true;
 }
 
-bool input_replay_active() {
-    std::lock_guard<std::mutex> lk(g_mutex);
-    return g_replay_loaded && replay_key() <= g_replay_last_key;
-}
-
 bool input_pad_poll(int chan, PadState& s) {
     if (chan < 0 || chan > 3) return false;
     std::lock_guard<std::mutex> lk(g_mutex);

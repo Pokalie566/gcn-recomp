@@ -14,9 +14,9 @@ std::vector<ScriptedPress> g_script;
 bool g_log;
 }  // namespace
 
-void input_script_init(const char* spec) {
+void input_script_init() {
     g_log = getenv("GCN_INPUT_LOG") != nullptr;
-    if (!spec || !*spec) spec = getenv("GCN_INPUT");
+    const char* spec = getenv("GCN_INPUT");
     if (!spec || !*spec) return;
     std::string s = spec;
     size_t pos = 0;

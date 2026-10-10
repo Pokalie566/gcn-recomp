@@ -11,9 +11,6 @@
 // other way: the module calls the runtime (and the game project's hle_* functions) by name,
 // resolved against the executable when it is loaded, which is why the executable exports
 // its symbols.
-//
-// A build that links the generated code statically (the Android app) defines
-// GCN_STATIC_GAME and never loads anything.
 #pragma once
 #include "recomp.h"
 #include <functional>

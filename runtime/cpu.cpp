@@ -48,16 +48,13 @@ void log_msg(LogCat cat, const char* fmt, ...) {
 }
 
 void fatal(const char* fmt, ...) {
-    // Formatted once rather than printed piecewise, because the text has to reach two
-    // places: stderr, and the platform's own crash record. On Android stderr is a pipe
-    // into a logcat ring that the app's tracing can lap in under a minute, so a message
-    // that went only there can be gone before anyone comes to read it.
+    // Formatted once rather than printed piecewise: the text goes to stderr and to the
+    // frontend's crash report (g_fatal_hook).
     char msg[1024];
     va_list ap;
     va_start(ap, fmt);
     vsnprintf(msg, sizeof(msg), fmt, ap);
     va_end(ap);
-    plat_record_fatal(msg);
     fprintf(stderr, "FATAL: %s\n", msg);
     CPU* c = cpu_current();
     if (c) {
@@ -328,7 +325,6 @@ static int64_t g_pace_offset_ns;  // virtual time the host gave up on catching u
 
 bool clock_is_virtual() { return g_virtual_clock; }
 void clock_set_scale(double s) { g_time_scale = s; }
-double clock_scale() { return g_time_scale; }
 
 void timing_init() {
     g_t0 = std::chrono::steady_clock::now();

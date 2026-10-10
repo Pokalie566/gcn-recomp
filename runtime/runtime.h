@@ -28,9 +28,9 @@ extern uint8_t* g_aram;
 
 // Where this machine's state for the game lives: the memory card, the shader cache, the
 // input logs, the prepared game, the settings. Null means saves/ in the working directory,
-// which is right for a desktop run started from the repository. An app has no useful
-// working directory -- on Android it is "/", which is not writable -- so a frontend that
-// knows one sets this before the guest boots (GCN_SAVE_DIR on the desktop).
+// which is right for a run started from the repository. An app has no useful working
+// directory, so the frontend sets this before the guest boots (the system's place for an
+// app's data, or GCN_SAVE_DIR).
 extern const char* g_save_dir;
 inline std::string save_path(const std::string& name) {
     return std::string(g_save_dir ? g_save_dir : "saves") + "/" + name;
@@ -74,7 +74,6 @@ void timing_init();
 // replay sees exactly the recording's timeline. GCN_CLOCK=host restores wall-clock time.
 bool clock_is_virtual();
 void clock_set_scale(double virtual_seconds_per_real_second);  // 0 = unpaced, run flat out
-double clock_scale();
 void clock_update_limit();   // recompute g_vlimit from the next event / decrementer deadline
 void clock_pace();           // sleep if virtual time is ahead of real time (virtual clock only)
 void irq_request();          // make the running guest thread poll at its next back-edge
@@ -127,13 +126,11 @@ void pi_write32(uint32_t off, uint32_t v);
 
 // ---- threads ----
 struct HostThread;
-HostThread* host_current();
 CPU* cpu_current();
 void threads_start_boot(uint32_t entry);
 void threads_request_quit();
 
 // ---- HLE ----
-void hle_os_report(CPU* c);
 std::string guest_format(CPU* c, uint32_t fmt_addr, int first_gpr, int first_fpr);
 std::string guest_str(uint32_t addr, size_t max = 4096);
 

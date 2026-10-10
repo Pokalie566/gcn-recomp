@@ -163,10 +163,9 @@ frame, its draws, vertex bytes and EFB copies, and how long it waited on the GPU
 ## Panics and faults
 
 A game's `OSPanic` should be listed in its `hle.txt`: the replacement prints the message and
-a guest backtrace and exits, instead of spinning in `PPCHalt` looking like a hang. The report
-goes to stderr, to the crash record (first line only) and to `<save dir>/panic.txt`, which is
-the one to read on a device after the fact. A host fault inside guest memory prints the
-guest address and every thread's registers.
+a guest backtrace and the heaps, and exits, instead of spinning in `PPCHalt` looking like a
+hang. A host fault inside guest memory prints the guest address and every thread's
+registers.
 
 Everything on stderr also goes to `<save dir>/<game>.log` (`crash_log.h`); the run before's
 is kept as `<game>.old.log`. A fault or a `fatal()` (a panic included) ends with a `CRASH:`
