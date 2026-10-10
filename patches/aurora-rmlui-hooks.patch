@@ -1,0 +1,90 @@
+diff --git a/include/aurora/rmlui.hpp b/include/aurora/rmlui.hpp
+index feb5cdf..997b978 100644
+--- a/include/aurora/rmlui.hpp
++++ b/include/aurora/rmlui.hpp
+@@ -49,6 +49,11 @@ struct RuntimeTexture {
+ 
+ using TextureProvider = std::function<std::optional<RuntimeTexture>(std::string_view)>;
+ 
++// Every text RmlUi shows goes through this, for the application's translations: true, with
++// `out` set, to replace `in`. Unset, texts are shown as written.
++using Translator = std::function<bool(Rml::String& out, const Rml::String& in)>;
++void set_translator(Translator translator) noexcept;
++
+ void register_texture_provider(std::string scheme, TextureProvider provider);
+ void unregister_texture_provider(std::string_view scheme) noexcept;
+ 
+diff --git a/lib/rmlui.cpp b/lib/rmlui.cpp
+index b3a662a..2495c5e 100644
+--- a/lib/rmlui.cpp
++++ b/lib/rmlui.cpp
+@@ -448,6 +448,8 @@ void initialize(const AuroraWindowSize& size) noexcept {
+ 
+ Rml::Context* get_context() noexcept { return g_context; }
+ 
++const webgpu::TextureWithSampler& render_target() noexcept { return s_renderTarget; }
++
+ bool is_initialized() noexcept { return g_context != nullptr; }
+ 
+ void set_ui_scale(float scale) noexcept { s_uiScale = scale > 0.0f ? std::clamp(scale, 0.25f, 4.0f) : 0.0f; }
+diff --git a/lib/rmlui.hpp b/lib/rmlui.hpp
+index 22c31d4..498d178 100644
+--- a/lib/rmlui.hpp
++++ b/lib/rmlui.hpp
+@@ -17,6 +17,9 @@ struct RecordedFrame {
+ void initialize(const AuroraWindowSize& size) noexcept;
+ void handle_window_event(const SDL_Event& event) noexcept;
+ RecordedFrame record_frame(const webgpu::Viewport& presentViewport) noexcept;
++// What the interface was last drawn into (premultiplied RGBA, the presentation's size): for
++// an application that captures what it shows.
++const webgpu::TextureWithSampler& render_target() noexcept;
+ void shutdown() noexcept;
+ 
+ } // namespace aurora::rmlui
+diff --git a/lib/rmlui/SystemInterface_Aurora.cpp b/lib/rmlui/SystemInterface_Aurora.cpp
+index 3ed6322..610e480 100644
+--- a/lib/rmlui/SystemInterface_Aurora.cpp
++++ b/lib/rmlui/SystemInterface_Aurora.cpp
+@@ -126,3 +126,29 @@ bool SystemInterface_Aurora::LogMessage(Rml::Log::Type type, const Rml::String&
+   }
+ }
+ } // namespace aurora::rmlui
++
++namespace aurora::rmlui {
++namespace {
++Translator s_translator;
++} // namespace
++
++void set_translator(Translator translator) noexcept { s_translator = std::move(translator); }
++
++int SystemInterface_Aurora::TranslateString(Rml::String& translated, const Rml::String& input) {
++  if (s_translator && s_translator(translated, input)) {
++    return 1;
++  }
++  translated = input;
++  return 0;
++}
++
++// An absolute path is taken as it is, rather than as relative to the document.
++void SystemInterface_Aurora::JoinPath(Rml::String& translated_path, const Rml::String& document_path,
++                                      const Rml::String& path) {
++  if (!path.empty() && (path[0] == '/' || (path.size() > 2 && path[1] == ':'))) {
++    translated_path = path;
++    return;
++  }
++  SystemInterface_SDL::JoinPath(translated_path, document_path, path);
++}
++} // namespace aurora::rmlui
+diff --git a/lib/rmlui/SystemInterface_Aurora.h b/lib/rmlui/SystemInterface_Aurora.h
+index 9fc6703..f587bf1 100644
+--- a/lib/rmlui/SystemInterface_Aurora.h
++++ b/lib/rmlui/SystemInterface_Aurora.h
+@@ -12,6 +12,8 @@ public:
+   bool LogMessage(Rml::Log::Type type, const Rml::String& message) override;
+   void ActivateKeyboard(Rml::Vector2f caret_position, float line_height) override;
+   void DeactivateKeyboard() override;
++  int TranslateString(Rml::String& translated, const Rml::String& input) override;
++  void JoinPath(Rml::String& translated_path, const Rml::String& document_path, const Rml::String& path) override;
+ 
+   // Custom API
+   void SetInputType(InputType type) noexcept;

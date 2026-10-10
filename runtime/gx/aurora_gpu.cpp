@@ -7,6 +7,8 @@
 #include "gfx/render_worker.hpp"   // Aurora's
 #include "gx/fifo.hpp"             // Aurora's
 #include "webgpu/gpu.hpp"          // Aurora's
+#include "rmlui.hpp"                // Aurora's (lib/rmlui.hpp)
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <thread>
@@ -74,7 +76,7 @@ bool gpu_pump(int timeout_ms) {
                 if (g_presented >= lo && g_presented <= hi) {
                     char name[32];
                     snprintf(name, sizeof(name), "frame_%05u", g_presented);
-                    gpu_dump(name);
+                    gpu_dump(name, false);
                 }
             }
             return true;
@@ -101,13 +103,20 @@ void gpu_set_dump(const char* dir, int every) {
 
 uint32_t gpu_frames_presented() { return g_presented; }
 
-// The framebuffer Aurora presents from, read back.
-void gpu_dump(const char* name) {
-    if (!g_dump_dir) return;
+std::string gpu_device_name() {
+    wgpu::AdapterInfo info;
+    if (!aurora::webgpu::g_device || !aurora::webgpu::g_device.GetAdapter().GetInfo(&info)) return {};
+    return std::string(info.device.data, info.device.length);
+}
+
+namespace {
+// A texture of Aurora's, read back as RGBA rows. Empty if it cannot be.
+std::vector<uint8_t> read_back(const aurora::webgpu::TextureWithSampler& src, uint32_t& w, uint32_t& h) {
     using namespace aurora::webgpu;
-    aurora::gfx::render_worker::synchronize();
-    const auto& src = present_source();
-    const uint32_t w = src.size.width, h = src.size.height, row = (w * 4 + 255) & ~255u;
+    w = src.size.width;
+    h = src.size.height;
+    if (!src.texture || !w || !h) return {};
+    const uint32_t row = (w * 4 + 255) & ~255u;
     const wgpu::BufferDescriptor bd{.usage = wgpu::BufferUsage::CopyDst | wgpu::BufferUsage::MapRead, .size = (uint64_t)row * h};
     const wgpu::Buffer buf = g_device.CreateBuffer(&bd);
     const wgpu::CommandEncoder enc = g_device.CreateCommandEncoder();
@@ -121,18 +130,48 @@ void gpu_dump(const char* name) {
     const wgpu::Future f = buf.MapAsync(wgpu::MapMode::Read, 0, bd.size, wgpu::CallbackMode::WaitAnyOnly,
                                         [&](wgpu::MapAsyncStatus s, wgpu::StringView) { ok = s == wgpu::MapAsyncStatus::Success; });
     g_instance.WaitAny(f, UINT64_MAX);
-    if (!ok) { fprintf(stderr, "[dump] %s: cannot read the framebuffer back\n", name); return; }
+    if (!ok) return {};
     const auto* px = (const uint8_t*)buf.GetConstMappedRange(0, bd.size);
     const bool bgra = src.format == wgpu::TextureFormat::BGRA8Unorm || src.format == wgpu::TextureFormat::BGRA8UnormSrgb;
     std::vector<uint8_t> rgba((size_t)w * h * 4);
     for (uint32_t y = 0; y < h; y++)
         for (uint32_t x = 0; x < w; x++) {
-            const uint8_t* s = px + (size_t)y * row + x * 4;
+            const uint8_t* q = px + (size_t)y * row + x * 4;
             uint8_t* d = &rgba[((size_t)y * w + x) * 4];
-            d[0] = bgra ? s[2] : s[0]; d[1] = s[1]; d[2] = bgra ? s[0] : s[2]; d[3] = 255;
+            d[0] = bgra ? q[2] : q[0]; d[1] = q[1]; d[2] = bgra ? q[0] : q[2]; d[3] = q[3];
         }
     buf.Unmap();
+    return rgba;
+}
+}  // namespace
+
+// The framebuffer Aurora presents from, read back -- with the interface over it, as the
+// window shows it, for `with_ui`.
+void gpu_dump(const char* name, bool with_ui) {
+    if (!g_dump_dir) return;
+    aurora::gfx::render_worker::synchronize();
+    uint32_t w, h;
+    std::vector<uint8_t> img = read_back(aurora::webgpu::present_source(), w, h);
+    if (img.empty()) { fprintf(stderr, "[dump] %s: cannot read the framebuffer back\n", name); return; }
+    for (size_t i = 3; i < img.size(); i += 4) img[i] = 255;
+    uint32_t uw, uh;
+    const std::vector<uint8_t> ui = with_ui ? read_back(aurora::rmlui::render_target(), uw, uh) : std::vector<uint8_t>{};
+    if (!ui.empty()) {
+        // The game's frame stretched to the interface's size, under it (premultiplied).
+        std::vector<uint8_t> out((size_t)uw * uh * 4);
+        for (uint32_t y = 0; y < uh; y++)
+            for (uint32_t x = 0; x < uw; x++) {
+                const uint8_t* g = &img[(((size_t)y * h / uh) * w + (size_t)x * w / uw) * 4];
+                const uint8_t* u = &ui[((size_t)y * uw + x) * 4];
+                uint8_t* d = &out[((size_t)y * uw + x) * 4];
+                for (int c = 0; c < 3; c++) d[c] = (uint8_t)std::min(255, u[c] + g[c] * (255 - u[3]) / 255);
+                d[3] = 255;
+            }
+        img = std::move(out);
+        w = uw;
+        h = uh;
+    }
     char path[512];
     snprintf(path, sizeof(path), "%s/%s.png", g_dump_dir, name);
-    write_png(path, rgba.data(), (int)w, (int)h);
+    write_png(path, img.data(), (int)w, (int)h);
 }

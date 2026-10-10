@@ -1,9 +1,34 @@
 # Graphics back end notes
 
-The renderer is an **OpenGL 3.3 core profile** back end behind a GX front end that runs
-vertex decoding, transform, lighting and texgen on the CPU, and generates one fragment
-shader per TEV configuration. On macOS the system framework is linked directly; elsewhere a
-vendored glad loader resolves the entry points.
+The game draws through **Aurora** (github.com/encounter/aurora): its GX command processor
+on WebGPU (Dawn: Metal, Direct3D 12, Vulkan), with SDL3 for the window and RmlUi for the
+menus. The sections below this one are about the OpenGL renderer it replaces, still in the
+tree (but not built into the game) until it is deleted.
+
+## Aurora
+
+- **Bridge** (`gx/aurora_bridge.cpp`, guest thread): the game's FIFO, parsed as the hardware
+  would, re-emitted as Aurora's big-endian stream, with Aurora's own commands (`GX_AURORA`,
+  0x50) for what Aurora cannot read from guest memory itself: vertex arrays, textures and
+  TLUTs (copied, keyed by address and frame so they are re-uploaded once per frame), EFB
+  copies. A few things the hardware does that Aurora does not take: cull mode 3 (no
+  triangles: dropped here), strips and fans of fewer than 3 vertices (dropped), the copy
+  trigger's format field (bits 4-6 plus bit 3 as the high bit; the intensity bit 15 only for
+  R4/R8/RA4/RA8; a depth copy as RG8 is Z16).
+- **GPU side** (`gx/aurora_gpu.cpp`, the window's thread): takes the bridge's chunks, feeds
+  them to `aurora::gx::fifo`, presents each frame. The guest waits at draw-done and token
+  syncs until its chunk is processed, and stays at most one frame ahead. The last frame is
+  kept, to be shown again under the pause menu and the launcher (`gpu_present_again`).
+- **Patches** (`patches/aurora-*.patch`, applied to the pinned commit at configure time):
+  `srtg-lit-color` (GX_TG_SRTG takes the lit colour channel, not the raw vertex colour: the
+  flashlight cone), `blocking-pipelines` (a draw waits for its pipeline rather than being
+  skipped the first time a shader is needed, as on the console), `rmlui-hooks` (a translator
+  for every text, absolute document paths, and the interface's render target for captures).
+- **Settings**: the internal resolution is `VISetFrameBufferScale`; MSAA and the graphics API
+  (`backend`) take effect at the next start; vsync and borderless at once.
+- **Builds**: SDL3 is always built here, static. An app (`GCN_APP`) also builds every other
+  dependency of Aurora (no Homebrew, no pkg-config). Dawn is prebuilt for one architecture
+  at a time, so a universal macOS app is two builds joined with `lipo`; Dawn needs macOS 12.
 
 ## Shader cache
 

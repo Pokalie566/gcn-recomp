@@ -9,6 +9,7 @@
 // trace in what is drawn.
 #pragma once
 #include <cstdint>
+#include <string>
 
 // Before the guest starts.
 void gpu_init();
@@ -19,7 +20,10 @@ bool gpu_pump(int timeout_ms);
 // guest is stopped, or before it runs.
 void gpu_present_again();
 // --dump-dir=DIR --dump-every=N: every Nth presented frame as DIR/frame_NNNNN.png
-// (GCN_DUMP_RANGE=a-b: only those). And the frame as it stands, as DIR/<name>.png.
+// (GCN_DUMP_RANGE=a-b: only those). And the last frame presented, as DIR/<name>.png -- with
+// the interface over it, as the window showed it, for `with_ui`.
 void gpu_set_dump(const char* dir, int every);
-void gpu_dump(const char* name);
+void gpu_dump(const char* name, bool with_ui);
 uint32_t gpu_frames_presented();
+// The graphics device, as it names itself.
+std::string gpu_device_name();

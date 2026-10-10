@@ -18,7 +18,6 @@ option(GCN_BENCH_ONLY "Build only the headless benchmark (no SDL2, no renderer)"
 # "which guest function did that?" and gives a crash dump something to print.
 option(GCN_TRACE_CALLS "Maintain a guest call stack (diagnostics)" OFF)
 option(GCN_APP "Build the game as an app to hand out: no disc, no game code, everything it needs inside (a .app on macOS)" OFF)
-option(GCN_AURORA "Also build <game>_aurora: the game drawn by Aurora (WebGPU), gx/aurora_bridge.cpp" OFF)
 option(GCN_GUEST_CHECKS "Call the game project's consistency checks at every poll, DMA and frame (diagnostics)" OFF)
 
 # gcn_add_game(
@@ -167,15 +166,22 @@ function(gcn_add_game)
 
   # Alternative entry points and the SDL-free audio stub: none of these may land in a
   # target that already has main.cpp or audio.cpp.
-  list(REMOVE_ITEM RUNTIME_SOURCES ${RT}/bench_main.cpp ${RT}/audio_stub.cpp
-    ${RT}/aurora_frontend.cpp ${RT}/gx/aurora_bridge.cpp ${RT}/gx/aurora_gpu.cpp)
+  list(REMOVE_ITEM RUNTIME_SOURCES ${RT}/bench_main.cpp ${RT}/audio_stub.cpp)
+
+  # The game draws through Aurora (gx/aurora_bridge.h, aurora_gpu.h); the OpenGL renderer
+  # and the front end it was fed by are left out of it.
+  set(GL_FRONTEND_SOURCES ${RT}/gx/render_gl.cpp ${RT}/gx/gl_load.cpp ${RT}/gx/shadergen.cpp ${RT}/gx/cmd.cpp
+    ${RT}/gx/xf.cpp ${RT}/gx/texture.cpp ${RT}/gx/texture_pack.cpp ${RT}/gx/interp.cpp)
+  set(AURORA_SOURCES ${RT}/gx/aurora_bridge.cpp ${RT}/gx/aurora_gpu.cpp ${RT}/gx/packs.cpp)
+  set(GAME_SOURCES ${RUNTIME_SOURCES})
+  list(REMOVE_ITEM GAME_SOURCES ${GL_FRONTEND_SOURCES})
 
   # Everything below the renderer and the SDL frontend -- the CPU, OS, hardware and GX
   # front end, including the batch queue in gx/xf.cpp -- is free of both GL and SDL.
   set(CORE_SOURCES ${RUNTIME_SOURCES})
   list(REMOVE_ITEM CORE_SOURCES
     ${RT}/main.cpp ${RT}/audio.cpp ${RT}/audio_sdl.cpp ${RT}/png.cpp
-    ${RT}/gx/render_gl.cpp ${RT}/gx/gl_load.cpp ${RT}/gx/shadergen.cpp)
+    ${RT}/gx/render_gl.cpp ${RT}/gx/gl_load.cpp ${RT}/gx/shadergen.cpp ${AURORA_SOURCES})
   list(FILTER CORE_SOURCES EXCLUDE REGEX "/runtime/ui/")
   list(APPEND CORE_SOURCES ${RT}/audio_stub.cpp)
   set(BENCH_SOURCES ${CORE_SOURCES} ${RT}/bench_main.cpp)
@@ -203,27 +209,42 @@ function(gcn_add_game)
     list(APPEND RUNTIME_SOURCES ${GLAD_SOURCE})
   endif()
 
-  # SDL2: pkg-config where it exists; on Windows there are no prebuilt ARM64 binaries,
-  # so build it from source.
-  if(GCN_BENCH_ONLY)
-    set(GCN_SDL_TARGET "")
-  elseif(WIN32 OR GCN_APP)
-    # Built here and linked in: an app carries it rather than depending on one installed.
+  # Aurora (github.com/encounter/aurora, MIT): the window, input and SDL3, the GPU through
+  # WebGPU (Dawn, prebuilt: Metal, D3D12, Vulkan) and its GX command processor, and RmlUi for
+  # the menus. Only the modules the game uses are built: the game's own SDK runs recompiled,
+  # so Aurora's DVD, CARD, THP and the rest are not wanted. A few fixes not yet upstream are
+  # patches/aurora-*.patch, applied from the pinned commit each time.
+  if(NOT GCN_BENCH_ONLY)
     include(FetchContent)
-    set(SDL_SHARED OFF CACHE BOOL "" FORCE)
-    set(SDL_STATIC ON CACHE BOOL "" FORCE)
-    set(SDL_TEST OFF CACHE BOOL "" FORCE)
-    set(SDL2_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
-    FetchContent_Declare(SDL2
-      URL https://github.com/libsdl-org/SDL/releases/download/release-2.30.9/SDL2-2.30.9.tar.gz
-      URL_HASH SHA256=24b574f71c87a763f50704bbb630cbe38298d544a1f890f099a4696b1d6beba4
-      DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
-    FetchContent_MakeAvailable(SDL2)
-    set(GCN_SDL_TARGET SDL2::SDL2-static)
-  else()
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(SDL2 REQUIRED IMPORTED_TARGET sdl2)
-    set(GCN_SDL_TARGET PkgConfig::SDL2)
+    set(AURORA_ENABLE_RMLUI ON CACHE BOOL "" FORCE)
+    set(AURORA_ENABLE_DVD OFF CACHE BOOL "" FORCE)
+    set(AURORA_ENABLE_CARD OFF CACHE BOOL "" FORCE)
+    set(AURORA_ENABLE_THP OFF CACHE BOOL "" FORCE)
+    set(AURORA_ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(AURORA_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+    # SDL3 built here and linked in, everywhere: the same one on every system, and an app
+    # carries it rather than depending on one installed.
+    set(AURORA_SDL3_PROVIDER vendor CACHE STRING "" FORCE)
+    set(AURORA_SDL3_LINKAGE static CACHE STRING "" FORCE)
+    if(GCN_APP)
+      # Nor anything else from the system it is built on (Homebrew, pkg-config): Aurora then
+      # builds each of these from source. zlib is the system's, which every system has.
+      foreach(pkg absl xxHash fmt PNG Freetype SQLite3 zstd Tracy PkgConfig)
+        set(CMAKE_DISABLE_FIND_PACKAGE_${pkg} TRUE)
+      endforeach()
+      if(APPLE)
+        set(CMAKE_IGNORE_PREFIX_PATH /opt/homebrew /usr/local)
+      endif()
+    endif()
+    FetchContent_Declare(aurora
+      GIT_REPOSITORY https://github.com/encounter/aurora.git
+      GIT_TAG 40cf48fce6ce85366608596bae018c6188f2b2e7   # 2026-10-09
+      PATCH_COMMAND git checkout -q -- . && git apply --ignore-whitespace
+                    ${GCN_RECOMP_DIR}/patches/aurora-srtg-lit-color.patch
+                    ${GCN_RECOMP_DIR}/patches/aurora-blocking-pipelines.patch
+                    ${GCN_RECOMP_DIR}/patches/aurora-rmlui-hooks.patch
+      EXCLUDE_FROM_ALL)
+    FetchContent_MakeAvailable(aurora)
   endif()
 
   # nod (github.com/encounter/nod, MIT): reads every disc image format -- iso, ciso, gcz,
@@ -292,17 +313,10 @@ function(gcn_add_game)
     set(GCN_RUNTIME_WARNINGS -Wall -Wno-unused-function)
   endif()
 
-  # Platform libraries the runtime needs beyond SDL2. The benchmark links none of this.
+  # Platform libraries the game needs beyond Aurora's: dbghelp to symbolize crash backtraces.
   set(GCN_PLATFORM_LIBS "")
-  if(GCN_BENCH_ONLY)
-  elseif(APPLE)
-    list(APPEND GCN_PLATFORM_LIBS "-framework OpenGL")
-  elseif(WIN32)
-    # opengl32 for the GL entry points, dbghelp to symbolize crash backtraces.
-    list(APPEND GCN_PLATFORM_LIBS opengl32 dbghelp)
-  else()
-    find_package(OpenGL REQUIRED)
-    list(APPEND GCN_PLATFORM_LIBS OpenGL::GL)
+  if(WIN32 AND NOT GCN_BENCH_ONLY)
+    list(APPEND GCN_PLATFORM_LIBS dbghelp)
   endif()
 
   # What the runtime knows about the game it was built for.
@@ -346,38 +360,7 @@ function(gcn_add_game)
     target_link_libraries(${G_NAME}_bench PRIVATE dbghelp)
   endif()
 
-  # The menus (runtime/ui): RmlUi (MIT) over FreeType (FTL), both built here and linked
-  # statically, so that nothing has to be installed and an app carries them. RmlUi's own
-  # backends for SDL2 and OpenGL 3 draw it, on our GL loader (gx/gl.h).
   if(NOT GCN_BENCH_ONLY)
-    include(FetchContent)
-    set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)   # the options below, as plain variables
-    set(BUILD_SHARED_LIBS OFF)
-    foreach(dep ZLIB BZIP2 PNG HARFBUZZ BROTLI)
-      set(FT_DISABLE_${dep} ON)
-    endforeach()
-    FetchContent_Declare(freetype
-      URL https://github.com/freetype/freetype/archive/refs/tags/VER-2-13-3.tar.gz
-      URL_HASH SHA256=bc5c898e4756d373e0d991bab053036c5eb2aa7c0d5c67e8662ddc6da40c4103
-      DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
-    FetchContent_MakeAvailable(freetype)
-    add_library(Freetype::Freetype ALIAS freetype)   # what RmlUi looks for, and not elsewhere
-    set(CMAKE_DISABLE_FIND_PACKAGE_Freetype ON)
-    FetchContent_Declare(rmlui
-      URL https://github.com/mikke89/RmlUi/archive/refs/tags/6.3.tar.gz
-      URL_HASH SHA256=d977298bb6147610e5984d5db85ddf284020d655a8713913f6982074f1dbdede
-      DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
-    FetchContent_MakeAvailable(rmlui)
-    add_library(gcn_rmlui_backend STATIC
-      ${rmlui_SOURCE_DIR}/Backends/RmlUi_Renderer_GL3.cpp ${rmlui_SOURCE_DIR}/Backends/RmlUi_Platform_SDL.cpp)
-    target_include_directories(gcn_rmlui_backend PUBLIC ${rmlui_SOURCE_DIR}/Backends PRIVATE ${RT} ${GLAD_INCLUDE_DIR})
-    target_compile_definitions(gcn_rmlui_backend PUBLIC RMLUI_SDL_VERSION_MAJOR=2
-                               PRIVATE "RMLUI_GL3_CUSTOM_LOADER=\"gx/gl.h\"" ${GCN_GL_DEFS})
-    target_link_libraries(gcn_rmlui_backend PUBLIC RmlUi::RmlUi ${GCN_SDL_TARGET})
-    if(APPLE)
-      target_link_libraries(gcn_rmlui_backend PUBLIC "-framework OpenGL")
-    endif()
-
     # The menus' documents beside the executable, as ui/ (in an app, its Resources/ui):
     # ours, then the game's over them.
     if(GCN_APP AND APPLE)
@@ -401,10 +384,10 @@ function(gcn_add_game)
   # is a module it loads (runtime/game_module.h) -- so it builds without a disc image. Its
   # symbols are exported for the module to call.
   if(NOT GCN_BENCH_ONLY)
-    add_executable(${G_NAME} ${RUNTIME_SOURCES} ${G_SOURCES})
+    add_executable(${G_NAME} ${GAME_SOURCES} ${G_SOURCES})
     _gcn_set_standards(${G_NAME})
-    target_include_directories(${G_NAME} PRIVATE ${RT} ${GLAD_INCLUDE_DIR})
-    target_link_libraries(${G_NAME} PRIVATE gcn_rmlui_backend gcn_nod ${GCN_SDL_TARGET} ${GCN_PLATFORM_LIBS} ${CMAKE_DL_LIBS})
+    target_include_directories(${G_NAME} PRIVATE ${RT} ${aurora_SOURCE_DIR}/lib)
+    target_link_libraries(${G_NAME} PRIVATE aurora::core aurora::gx aurora::vi gcn_nod ${GCN_PLATFORM_LIBS} ${CMAKE_DL_LIBS})
     # The system's own file picker (runtime/ui/pick_file.h): AppKit on macOS, comdlg32 on Windows.
     if(APPLE)
       target_sources(${G_NAME} PRIVATE ${RT}/ui/pick_file_mac.mm)
@@ -431,7 +414,7 @@ function(gcn_add_game)
       add_dependencies(${G_NAME} ${G_NAME}_game)
     endif()
     target_compile_options(${G_NAME} PRIVATE ${GCN_RUNTIME_WARNINGS})
-    target_compile_definitions(${G_NAME} PRIVATE ${GCN_GAME_DEFS} ${GCN_GL_DEFS})
+    target_compile_definitions(${G_NAME} PRIVATE ${GCN_GAME_DEFS})
 
     # The app: what preparing the game on the player's machine needs (runtime/prepare.h:
     # the recompiler, the tables, the symbols, the headers the generated code includes),
@@ -462,15 +445,32 @@ function(gcn_add_game)
       if(G_LICENSES)
         set(_game_licenses COMMAND ${CMAKE_COMMAND} -E copy ${G_LICENSES} ${_res}/licenses/)
       endif()
+      # What the app links in from Aurora's dependencies, with their licences.
+      # (Those not built here, found on the system, are skipped.)
+      foreach(dep rmlui freetype sdl imgui fmt abseil-cpp xxhash zstd png)
+        FetchContent_GetProperties(${dep})
+      endforeach()
+      set(_dep_licenses)
+      foreach(lic "Aurora.txt|${aurora_SOURCE_DIR}/LICENSE" "RmlUi.txt|${rmlui_SOURCE_DIR}/LICENSE.txt"
+                  "FreeType.txt|${freetype_SOURCE_DIR}/docs/FTL.TXT" "SDL3.txt|${sdl_SOURCE_DIR}/LICENSE.txt"
+                  "Dawn.txt|${RT}/third_party/dawn-LICENSE.txt" "imgui.txt|${imgui_SOURCE_DIR}/LICENSE.txt"
+                  "fmt.txt|${fmt_SOURCE_DIR}/LICENSE" "abseil.txt|${abseil-cpp_SOURCE_DIR}/LICENSE"
+                  "xxHash.txt|${xxhash_SOURCE_DIR}/LICENSE" "zstd.txt|${zstd_SOURCE_DIR}/LICENSE"
+                  "libpng.txt|${png_SOURCE_DIR}/LICENSE")
+        string(REPLACE "|" ";" lic ${lic})
+        list(GET lic 0 _to)
+        list(GET lic 1 _from)
+        if(EXISTS ${_from})
+          list(APPEND _dep_licenses COMMAND ${CMAKE_COMMAND} -E copy ${_from} ${_res}/licenses/${_to})
+        endif()
+      endforeach()
       add_custom_command(TARGET ${G_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory ${_res}/recomp ${_res}/include ${_res}/licenses
         COMMAND ${CMAKE_COMMAND} -E copy ${_recomp_py} ${_res}/recomp/
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${G_TABLES} ${_res}/tables
         COMMAND ${CMAKE_COMMAND} -E copy ${G_SYMBOLS} ${_res}/symbols.txt
         COMMAND ${CMAKE_COMMAND} -E copy ${RT}/recomp.h ${RT}/compat.h ${_res}/include/
-        COMMAND ${CMAKE_COMMAND} -E copy ${rmlui_SOURCE_DIR}/LICENSE.txt ${_res}/licenses/RmlUi.txt
-        COMMAND ${CMAKE_COMMAND} -E copy ${freetype_SOURCE_DIR}/docs/FTL.TXT ${_res}/licenses/FreeType.txt
-        COMMAND ${CMAKE_COMMAND} -E copy ${sdl2_SOURCE_DIR}/LICENSE.txt ${_res}/licenses/SDL2.txt
+        ${_dep_licenses}
         COMMAND ${CMAKE_COMMAND} -E copy ${RT}/third_party/nod-LICENSE-MIT.txt ${_res}/licenses/nod.txt
         COMMAND ${CMAKE_COMMAND} -E copy ${RT}/ui/assets/fonts/OFL.txt ${_res}/licenses/FiraSans-OFL.txt
         ${_game_licenses}
@@ -481,44 +481,6 @@ function(gcn_add_game)
           COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_LINKER_FILE:${G_NAME}> ${_res}/lib/${G_NAME}.lib
           VERBATIM)
       endif()
-    endif()
-  endif()
-
-  # ---- The game drawn by Aurora (GCN_AURORA) ----
-  # Aurora (github.com/encounter/aurora, MIT): its GX command processor and WebGPU renderer
-  # (Dawn, prebuilt), its window and SDL3. Only the modules the bridge uses are built: the
-  # game's own SDK runs recompiled, so Aurora's DVD, CARD, THP and the rest are not wanted.
-  # The guest and the hardware are CORE_SOURCES, without the OpenGL front end, which
-  # gx/aurora_bridge.cpp replaces.
-  if(GCN_AURORA AND NOT GCN_BENCH_ONLY)
-    include(FetchContent)
-    set(AURORA_ENABLE_DVD OFF CACHE BOOL "" FORCE)
-    set(AURORA_ENABLE_CARD OFF CACHE BOOL "" FORCE)
-    set(AURORA_ENABLE_THP OFF CACHE BOOL "" FORCE)
-    set(AURORA_ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
-    set(AURORA_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
-    FetchContent_Declare(aurora
-      GIT_REPOSITORY https://github.com/encounter/aurora.git
-      GIT_TAG 40cf48fce6ce85366608596bae018c6188f2b2e7   # 2026-10-09
-      # Fixes not yet upstream, one patch each (patches/aurora-*.patch).
-      # (From the pinned commit each time, so that configuring again applies them again.)
-      PATCH_COMMAND git checkout -q -- . && git apply --ignore-whitespace
-                    ${GCN_RECOMP_DIR}/patches/aurora-srtg-lit-color.patch
-                    ${GCN_RECOMP_DIR}/patches/aurora-blocking-pipelines.patch
-      EXCLUDE_FROM_ALL)
-    FetchContent_MakeAvailable(aurora)
-    set(AURORA_SOURCES ${CORE_SOURCES} ${RT}/aurora_frontend.cpp ${RT}/gx/aurora_bridge.cpp ${RT}/gx/aurora_gpu.cpp ${RT}/png.cpp)
-    list(REMOVE_ITEM AURORA_SOURCES ${RT}/gx/cmd.cpp ${RT}/gx/xf.cpp ${RT}/gx/texture.cpp
-      ${RT}/gx/texture_pack.cpp ${RT}/gx/interp.cpp)
-    add_executable(${G_NAME}_aurora ${AURORA_SOURCES} ${G_SOURCES})
-    _gcn_set_standards(${G_NAME}_aurora)
-    target_include_directories(${G_NAME}_aurora PRIVATE ${RT} ${aurora_SOURCE_DIR}/lib)
-    target_link_libraries(${G_NAME}_aurora PRIVATE aurora::gx aurora::vi gcn_nod ${CMAKE_DL_LIBS})
-    target_compile_options(${G_NAME}_aurora PRIVATE ${GCN_RUNTIME_WARNINGS})
-    target_compile_definitions(${G_NAME}_aurora PRIVATE ${GCN_GAME_DEFS})
-    set_target_properties(${G_NAME}_aurora PROPERTIES ENABLE_EXPORTS ON)
-    if(WIN32)
-      target_link_libraries(${G_NAME}_aurora PRIVATE dbghelp)
     endif()
   endif()
 

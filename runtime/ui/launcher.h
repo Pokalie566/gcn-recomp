@@ -9,13 +9,13 @@
 #pragma once
 #include "hw/pad.h"
 #include "settings.h"
-#include <SDL.h>
+#include <SDL3/SDL.h>
 #include <functional>
 #include <string>
 
 struct LauncherEnv {
     SDL_Window* win = nullptr;
-    std::string gl;                                // the GL renderer, as it names itself
+    std::string gpu;                               // the graphics API and device in use
     bool audio = false;                            // whether the sound device opened
     std::function<void(const Settings&)> commit;   // a change of settings: applied and saved
     std::function<void(SDL_Event&)> event;         // the frontend's own events: controllers, F11

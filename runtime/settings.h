@@ -14,6 +14,11 @@ struct Settings {
     bool widescreen = false;    // 16:9
     bool interpolate = false;   // a 30 fps game shown at 60
     bool fullscreen = false;
+    bool borderless = false;    // the window without its frame
+    int window_w = 0, window_h = 0;   // the window's size as the player left it; 0: the default
+    bool vsync = true;          // presentation waits for the display, as a television does
+    int msaa = 1;               // samples per pixel: 1, 2, 4 or 8; at the next start
+    std::string backend = "auto";   // the GPU API: auto, metal, vulkan, d3d12; at the next start
     bool textures = true;       // custom textures, when there is a pack
     bool mouse_aim = false;     // the mouse as the C stick
     bool rumble = true;         // the controller's, when the game runs the pad's motor

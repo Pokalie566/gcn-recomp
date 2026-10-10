@@ -13,7 +13,7 @@
 #include "hw/pad.h"
 #include "saves.h"
 #include "settings.h"
-#include <SDL.h>
+#include <SDL3/SDL.h>
 #include <string>
 #include <vector>
 
@@ -83,8 +83,8 @@ void ui_set_saves(const UiSaves& s);
 // Hands an event to the interface while it is open. True if it took it.
 bool ui_event(SDL_Event& e);
 
-// Draws the interface over what is in the window framebuffer, `w` x `h` pixels.
-void ui_render(int w, int h);
+// Once a frame, before it is presented: Aurora draws the interface as it presents.
+void ui_frame();
 
 enum UiAction {
     UI_NONE, UI_RESUME, UI_QUIT,
@@ -105,11 +105,11 @@ bool ui_take_settings(Settings& s);
 
 // GCN_UI_INPUT=<key>,<key>...: those keys (SDL names: Down, Return, Escape...) pressed in
 // the interface, one every 16 frames, through the event queue -- the pages driven as a
-// player would, for checking them. "shot:<name>" in the list writes the window as it is to
-// GCN_UI_SHOT/ui_<name>.png, and "drop:<path>" drops that file on the window. Called by the
-// frontend once a frame, after ui_render, while the interface is open and nothing is busy.
-void ui_script(int w, int h);
+// player would, for checking them. "shot:<name>" writes the window as it is to
+// GCN_UI_SHOT/ui_<name>.png, and "drop:<path>" drops that file on the
+// window. Called by the frontend once a frame while the interface is open and nothing is busy.
+void ui_script();
 
-// A dropped file, as GCN_UI_INPUT sends one: an SDL_USEREVENT with this code and the path,
-// SDL_strdup'd, in data1. Not a forged SDL_DROPFILE, which SDL2 on SDL3 cannot pass through.
+// A dropped file, as GCN_UI_INPUT sends one: an SDL_EVENT_USER with this code and the path,
+// SDL_strdup'd, in data1.
 constexpr int kUiDropEvent = 0x44524F50;

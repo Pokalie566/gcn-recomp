@@ -1,10 +1,10 @@
 // The interface. See ui.h.
 #include "ui/ui.h"
-#include "gx/gl.h"
+#include "gx/aurora_gpu.h"
 #include "platform.h"
 #include <RmlUi/Core.h>
-#include <RmlUi_Platform_SDL.h>
-#include <RmlUi_Renderer_GL3.h>
+#include <aurora/input.hpp>
+#include <aurora/rmlui.hpp>
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -14,8 +14,6 @@
 #include <fstream>
 #include <unordered_map>
 #include <vector>
-
-bool write_png(const char* path, const uint8_t* rgba, int w, int h);
 
 namespace {
 
@@ -45,34 +43,19 @@ const char* const kActionLabels[ACT_COUNT] = {
 
 std::unordered_map<std::string, std::string> g_strings;   // English -> the language's
 
-// RmlUi takes a path that starts with / as relative to the document's directory; the banner
-// is in the save directory, an absolute path, which this lets through as it is. And every
-// text goes through the language's strings, its surrounding spaces kept.
-class System : public SystemInterface_SDL {
-public:
-    using SystemInterface_SDL::SystemInterface_SDL;
-    int TranslateString(Rml::String& out, const Rml::String& in) override {
-        const size_t a = in.find_first_not_of(" \t\r\n"), b = in.find_last_not_of(" \t\r\n");
-        if (a != std::string::npos) {
-            auto it = g_strings.find(in.substr(a, b - a + 1));
-            if (it != g_strings.end()) {
-                out = in.substr(0, a) + it->second + in.substr(b + 1);
-                return 1;
-            }
-        }
-        out = in;
-        return 0;
-    }
-    void JoinPath(Rml::String& out, const Rml::String& document, const Rml::String& path) override {
-        if (!path.empty() && (path[0] == '/' || (path.size() > 2 && path[1] == ':'))) out = path;
-        else SystemInterface_SDL::JoinPath(out, document, path);
-    }
-};
+// Every text goes through the language's strings, its surrounding spaces kept (Aurora's
+// RmlUi asks, aurora::rmlui::set_translator).
+bool translate(Rml::String& out, const Rml::String& in) {
+    const size_t a = in.find_first_not_of(" \t\r\n"), b = in.find_last_not_of(" \t\r\n");
+    if (a == std::string::npos) return false;
+    auto it = g_strings.find(in.substr(a, b - a + 1));
+    if (it == g_strings.end()) return false;
+    out = in.substr(0, a) + it->second + in.substr(b + 1);
+    return true;
+}
 
 SDL_Window* g_win;
-System* g_system;
-RenderInterface_GL3* g_render;
-Rml::Context* g_ctx;
+Rml::Context* g_ctx;   // Aurora's (aurora::rmlui), which draws it as it presents
 Rml::DataModelHandle g_model;
 Rml::ElementDocument* g_launcher;
 Rml::ElementDocument* g_pause;
@@ -141,36 +124,54 @@ void capture_end() {
 // While a row waits for an input: the next key, button or stick push is it. Esc or the
 // controller's Back cancels, Delete clears the row.
 bool capture_event(const SDL_Event& e) {
-    if (e.type == SDL_KEYDOWN && !e.key.repeat) {
-        const SDL_Scancode sc = e.key.keysym.scancode;
+    if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
+        const SDL_Scancode sc = e.key.scancode;
         if (sc == SDL_SCANCODE_ESCAPE) capture_end();
         else if (sc == SDL_SCANCODE_DELETE || sc == SDL_SCANCODE_BACKSPACE) { bind_input(""); capture_end(); }
         else if (!g_capture_pad) { bind_input(std::string("key:") + SDL_GetScancodeName(sc)); capture_end(); }
         return true;
     }
-    if (e.type == SDL_CONTROLLERBUTTONDOWN) {
-        const auto b = (SDL_GameControllerButton)e.cbutton.button;
-        if (b == SDL_CONTROLLER_BUTTON_BACK) capture_end();
-        else if (g_capture_pad) { bind_input(std::string("pad:") + SDL_GameControllerGetStringForButton(b)); capture_end(); }
+    if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+        const auto b = (SDL_GamepadButton)e.gbutton.button;
+        if (b == SDL_GAMEPAD_BUTTON_BACK) capture_end();
+        else if (g_capture_pad) { bind_input(std::string("pad:") + SDL_GetGamepadStringForButton(b)); capture_end(); }
         return true;
     }
-    if (e.type == SDL_CONTROLLERAXISMOTION && g_capture_pad && std::abs((int)e.caxis.value) > 24000) {
-        const auto a = (SDL_GameControllerAxis)e.caxis.axis;
-        bind_input(std::string("axis:") + (e.caxis.value < 0 ? "-" : "+") + SDL_GameControllerGetStringForAxis(a));
+    if (e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION && g_capture_pad && std::abs((int)e.gaxis.value) > 24000) {
+        const auto a = (SDL_GamepadAxis)e.gaxis.axis;
+        bind_input(std::string("axis:") + (e.gaxis.value < 0 ? "-" : "+") + SDL_GetGamepadStringForAxis(a));
         capture_end();
         return true;
     }
-    return e.type != SDL_QUIT && e.type != SDL_WINDOWEVENT;
+    return e.type != SDL_EVENT_QUIT && !(e.type >= SDL_EVENT_WINDOW_FIRST && e.type <= SDL_EVENT_WINDOW_LAST);
 }
 
 Rml::String g_lang_label;
 const char* const kLangs[][2] = {{"auto", "Automatic"}, {"en", "English"}, {"fr", "Français"}};
+// The graphics APIs this system has, the setting's value and its name.
+const char* const kBackends[][2] = {
+    {"auto", "Automatic"},
+#ifdef _WIN32
+    {"d3d12", "Direct3D 12"}, {"vulkan", "Vulkan"},
+#elif defined(__APPLE__)
+    {"metal", "Metal"},
+#else
+    {"vulkan", "Vulkan"},
+#endif
+};
+constexpr int kBackendCount = sizeof(kBackends) / sizeof(kBackends[0]);
+Rml::String g_backend_label;
 
-void lang_label_update() {
+// The names shown for the settings that are not numbers.
+void labels_update() {
     g_lang_label = g_s.lang;
     for (const auto& l : kLangs)
         if (g_s.lang == l[0]) g_lang_label = ui_tr(l[1]);
+    g_backend_label = g_s.backend;
+    for (const auto& b : kBackends)
+        if (g_s.backend == b[0]) g_backend_label = ui_tr(b[1]);
     g_model.DirtyVariable("lang_label");
+    g_model.DirtyVariable("backend_label");
 }
 
 // Left and right on a row that holds a value: one step down or up.
@@ -179,9 +180,16 @@ void nudge(const Rml::String& var, int dir) {
         int i = 0;
         while (i < 3 && g_s.lang != kLangs[i][0]) i++;
         g_s.lang = kLangs[((i % 3) + dir + 3) % 3][0];
-        lang_label_update();
+        labels_update();
+    }
+    if (var == "backend") {
+        int i = 0;
+        while (i < kBackendCount && g_s.backend != kBackends[i][0]) i++;
+        g_s.backend = kBackends[((i % kBackendCount) + dir + kBackendCount) % kBackendCount][0];
+        labels_update();
     }
     if (var == "scale") g_s.scale = std::clamp(g_s.scale + dir, 1, 4);
+    else if (var == "msaa") g_s.msaa = std::clamp(dir > 0 ? g_s.msaa * 2 : g_s.msaa / 2, 1, 8);   // 1, 2, 4, 8 samples
     else if (var == "volume") g_s.volume = std::clamp(g_s.volume + 5 * dir, 0, 100);
     else if (var == "mouse_sens") g_s.mouse_sens = std::clamp(std::round((g_s.mouse_sens + 0.25f * dir) * 4) / 4, 0.25f, 4.0f);
     else if (var == "deadzone") g_s.deadzone = std::clamp(std::round(g_s.deadzone * 100 + dir) / 100, 0.02f, 0.40f);
@@ -245,19 +253,19 @@ public:
 
 Rml::Input::KeyIdentifier controller_key(uint8_t button) {
     switch (button) {
-    case SDL_CONTROLLER_BUTTON_DPAD_UP: return Rml::Input::KI_UP;
-    case SDL_CONTROLLER_BUTTON_DPAD_DOWN: return Rml::Input::KI_DOWN;
-    case SDL_CONTROLLER_BUTTON_DPAD_LEFT: return Rml::Input::KI_LEFT;
-    case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: return Rml::Input::KI_RIGHT;
-    case SDL_CONTROLLER_BUTTON_A: return Rml::Input::KI_SPACE;   // what clicks the focused element
+    case SDL_GAMEPAD_BUTTON_DPAD_UP: return Rml::Input::KI_UP;
+    case SDL_GAMEPAD_BUTTON_DPAD_DOWN: return Rml::Input::KI_DOWN;
+    case SDL_GAMEPAD_BUTTON_DPAD_LEFT: return Rml::Input::KI_LEFT;
+    case SDL_GAMEPAD_BUTTON_DPAD_RIGHT: return Rml::Input::KI_RIGHT;
+    case SDL_GAMEPAD_BUTTON_SOUTH: return Rml::Input::KI_SPACE;   // what clicks the focused element
     default: return Rml::Input::KI_UNKNOWN;
     }
 }
 
-void render_frame(int w, int h) {
-    g_ctx->SetDimensions({w, h});
-    g_ctx->SetDensityIndependentPixelRatio((float)h / 720.0f);
-    g_ctx->Update();
+// Before Aurora draws the context: the scale, and the focus a change of page asks for.
+void frame() {
+    // One dp is a 720th of the height, so the pages keep their proportions at any size.
+    aurora::rmlui::set_ui_scale((float)g_ctx->GetDimensions().y / 720.0f);
     if (g_refocus) {
         // The page's elements are the ones the last change made: the assistant's step.
         g_refocus = false;
@@ -266,10 +274,6 @@ void render_frame(int w, int h) {
                                              : g_setup->GetElementById("setup_next");
         if (to) to->Focus(true);
     }
-    g_render->SetViewport(w, h);
-    g_render->BeginFrame();
-    g_ctx->Render();
-    g_render->EndFrame();
 }
 
 void act(UiAction a, int index = 0) {
@@ -289,11 +293,12 @@ Rml::String card_time(uint32_t t) {
 // The language to show: the setting, or for "auto" the first of the system's that has strings.
 std::string pick_language(const std::string& setting, const std::string& dir) {
     if (setting != "auto") return setting;
-    if (SDL_Locale* locales = SDL_GetPreferredLocales()) {
+    int n = 0;
+    if (SDL_Locale** locales = SDL_GetPreferredLocales(&n)) {
         std::string found = "en";
-        for (SDL_Locale* l = locales; l->language; l++)
-            if (!strcmp(l->language, "en") || plat_readable((dir + "/lang/" + l->language + ".txt").c_str())) {
-                found = l->language;
+        for (int i = 0; i < n; i++)
+            if (!strcmp(locales[i]->language, "en") || plat_readable((dir + "/lang/" + locales[i]->language + ".txt").c_str())) {
+                found = locales[i]->language;
                 break;
             }
         SDL_free(locales);
@@ -354,19 +359,13 @@ bool ui_init(SDL_Window* win, const std::string& dir, const std::string& lang) {
     }
     if (const std::string l = pick_language(lang, dir); l != "en") load_strings(dir + "/lang/" + l + ".txt");
     g_win = win;
-    g_system = new System(win);
-    g_render = new RenderInterface_GL3();
-    if (!*g_render) {
-        fprintf(stderr, "ui: the GL renderer did not start, so no interface\n");
+    g_ctx = aurora::rmlui::get_context();
+    if (!g_ctx) {
+        fprintf(stderr, "ui: Aurora has no RmlUi context, so no interface\n");
         return false;
     }
-    Rml::SetSystemInterface(g_system);
-    Rml::SetRenderInterface(g_render);
-    Rml::Initialise();
+    aurora::rmlui::set_translator(translate);
     for (const char* f : {"fonts/FiraSans-Regular.ttf", "fonts/FiraSans-Bold.ttf"}) Rml::LoadFontFace(dir + "/" + f);
-    int w, h;
-    SDL_GL_GetDrawableSize(win, &w, &h);
-    g_ctx = Rml::CreateContext("ui", {w, h});
 
     Rml::DataModelConstructor m = g_ctx->CreateDataModel("ui");
     if (auto s = m.RegisterStruct<BindRow>()) {
@@ -398,6 +397,10 @@ bool ui_init(SDL_Window* win, const std::string& dir, const std::string& lang) {
     m.Bind("widescreen", &g_s.widescreen);
     m.Bind("interpolate", &g_s.interpolate);
     m.Bind("fullscreen", &g_s.fullscreen);
+    m.Bind("borderless", &g_s.borderless);
+    m.Bind("vsync", &g_s.vsync);
+    m.Bind("msaa", &g_s.msaa);
+    m.Bind("backend_label", &g_backend_label);
     m.Bind("textures", &g_s.textures);
     m.Bind("mouse_aim", &g_s.mouse_aim);
     m.Bind("rumble", &g_s.rumble);
@@ -460,7 +463,8 @@ bool ui_init(SDL_Window* win, const std::string& dir, const std::string& lang) {
     m.BindEventCallback("toggle", [](H h, Rml::Event&, Args a) {
         const Rml::String var = a.empty() ? "" : a[0].Get<Rml::String>();
         for (auto [name, field] : {std::pair{"widescreen", &g_s.widescreen}, {"interpolate", &g_s.interpolate},
-                                   {"fullscreen", &g_s.fullscreen}, {"textures", &g_s.textures}, {"mouse_aim", &g_s.mouse_aim},
+                                   {"fullscreen", &g_s.fullscreen}, {"borderless", &g_s.borderless}, {"vsync", &g_s.vsync},
+                                   {"textures", &g_s.textures}, {"mouse_aim", &g_s.mouse_aim},
                                    {"rumble", &g_s.rumble}})
             if (var == name) *field = !*field;
         h.DirtyVariable(var);
@@ -528,7 +532,7 @@ void ui_set_settings(const Settings& s) {
     if (!g_ctx) return;
     g_s = s;
     rows_update();
-    lang_label_update();
+    labels_update();
     packs_update();
     g_model.DirtyAllVariables();
 }
@@ -592,46 +596,64 @@ bool ui_open() {
 bool ui_event(SDL_Event& e) {
     if (!ui_open()) return false;
     if (g_capture >= 0) return capture_event(e);
+    using aurora::input::InputEvent;
+    InputEvent in;
     switch (e.type) {
-    case SDL_KEYDOWN:
-        if (e.key.keysym.scancode == SDL_SCANCODE_ESCAPE) { back(); return true; }
+    case SDL_EVENT_KEY_DOWN:
+        if (e.key.scancode == SDL_SCANCODE_ESCAPE) { back(); return true; }
         // Enter acts on the focused element, as A does.
-        if (e.key.keysym.sym == SDLK_RETURN || e.key.keysym.sym == SDLK_KP_ENTER) {
+        if (e.key.key == SDLK_RETURN || e.key.key == SDLK_KP_ENTER) {
             g_ctx->ProcessKeyDown(Rml::Input::KI_SPACE, 0);
             g_ctx->ProcessKeyUp(Rml::Input::KI_SPACE, 0);
             return true;
         }
+        [[fallthrough]];
+    case SDL_EVENT_KEY_UP:
+        in.source = aurora::input::keyboard_source();
+        in.payload = InputEvent::KeyChanged{e.key.scancode, e.key.key, e.key.mod, e.key.down, e.key.repeat};
         break;
-    case SDL_CONTROLLERBUTTONDOWN:
-        if (e.cbutton.button == SDL_CONTROLLER_BUTTON_BACK) return false;   // the frontend's: resume
-        if (e.cbutton.button == SDL_CONTROLLER_BUTTON_B) back();
-        else if (g_settings->IsVisible() && (e.cbutton.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER ||
-                                             e.cbutton.button == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)) {
-            g_tab = (g_tab + (e.cbutton.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER ? 5 : 1)) % 6;
+    case SDL_EVENT_TEXT_INPUT:
+        in.source = aurora::input::keyboard_source();
+        in.payload = InputEvent::TextInput{e.text.text};
+        break;
+    case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+        if (e.gbutton.button == SDL_GAMEPAD_BUTTON_BACK) return false;   // the frontend's: resume
+        if (e.gbutton.button == SDL_GAMEPAD_BUTTON_EAST) back();
+        else if (g_settings->IsVisible() && (e.gbutton.button == SDL_GAMEPAD_BUTTON_LEFT_SHOULDER ||
+                                             e.gbutton.button == SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER)) {
+            g_tab = (g_tab + (e.gbutton.button == SDL_GAMEPAD_BUTTON_LEFT_SHOULDER ? 5 : 1)) % 6;
             g_model.DirtyVariable("tab");
             if (Rml::Element* t = g_settings->GetElementById("tab" + std::to_string(g_tab))) t->Focus(true);
-        } else if (const auto k = controller_key(e.cbutton.button); k != Rml::Input::KI_UNKNOWN) {
+        } else if (const auto k = controller_key(e.gbutton.button); k != Rml::Input::KI_UNKNOWN) {
             g_ctx->ProcessKeyDown(k, 0);
             g_ctx->ProcessKeyUp(k, 0);
         }
         return true;
-    case SDL_MOUSEMOTION: {
-        // RmlUi lays out in drawable pixels; SDL2 reports the mouse in window points.
-        int ww, wh, dw, dh;
-        SDL_GetWindowSize(g_win, &ww, &wh);
-        SDL_GL_GetDrawableSize(g_win, &dw, &dh);
-        g_ctx->ProcessMouseMove(e.motion.x * dw / std::max(ww, 1), e.motion.y * dh / std::max(wh, 1), 0);
-        return true;
-    }
-    default:
+    // The mouse in window points; Aurora maps them onto the context.
+    case SDL_EVENT_MOUSE_MOTION:
+        in.source = aurora::input::mouse_source();
+        in.payload = InputEvent::PointerChanged{0, InputEvent::PointerChanged::Phase::Move, {e.motion.x, e.motion.y},
+                                                {e.motion.xrel, e.motion.yrel}};
         break;
+    case SDL_EVENT_MOUSE_BUTTON_DOWN:
+    case SDL_EVENT_MOUSE_BUTTON_UP:
+        in.source = aurora::input::mouse_source();
+        in.payload = InputEvent::PointerChanged{0, e.button.down ? InputEvent::PointerChanged::Phase::Down : InputEvent::PointerChanged::Phase::Up,
+                                                {e.button.x, e.button.y}, {}, e.button.button};
+        break;
+    case SDL_EVENT_MOUSE_WHEEL:
+        in.source = aurora::input::mouse_source();
+        in.payload = InputEvent::Scroll{{e.wheel.mouse_x, e.wheel.mouse_y}, {e.wheel.x, -e.wheel.y}};
+        break;
+    default:
+        return false;
     }
-    RmlSDL::InputEventHandler(g_ctx, g_win, e);
-    return e.type != SDL_QUIT && e.type != SDL_WINDOWEVENT && e.type != SDL_DROPFILE;
+    aurora::rmlui::process_input(in);
+    return true;
 }
 
-void ui_render(int w, int h) {
-    if (ui_open()) render_frame(w, h);
+void ui_frame() {
+    if (g_ctx) frame();
 }
 
 UiAction ui_take_action() {
@@ -648,7 +670,7 @@ bool ui_take_settings(Settings& s) {
     return true;
 }
 
-void ui_script(int w, int h) {
+void ui_script() {
     static const char* keys = getenv("GCN_UI_INPUT");
     static int frames;
     if (!keys || !*keys || !ui_open() || ++frames % 16) return;
@@ -657,29 +679,30 @@ void ui_script(int w, int h) {
     keys = comma ? comma + 1 : "";
     if (starts(name, "drop:")) {   // a file dropped on the window (see kUiDropEvent)
         SDL_Event e{};
-        e.type = SDL_USEREVENT;
+        e.type = SDL_EVENT_USER;
         e.user.code = kUiDropEvent;
+        e.user.windowID = SDL_GetWindowID(g_win);
         e.user.data1 = SDL_strdup(name.c_str() + 5);
         SDL_PushEvent(&e);
         return;
     }
     if (starts(name, "shot:")) {
-        const char* dir = getenv("GCN_UI_SHOT");
-        if (!dir) return;
-        std::vector<uint8_t> px((size_t)w * h * 4), flipped(px.size());
-        glBindFramebuffer(GL_READ_FRAMEBUFFER, 0);
-        glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, px.data());
-        for (int y = 0; y < h; y++) memcpy(&flipped[(size_t)y * w * 4], &px[(size_t)(h - 1 - y) * w * 4], (size_t)w * 4);
-        plat_make_dirs(dir);
-        write_png((std::string(dir) + "/ui_" + name.substr(5) + ".png").c_str(), flipped.data(), w, h);
+        if (const char* dir = getenv("GCN_UI_SHOT")) {
+            plat_make_dirs(dir);
+            gpu_set_dump(dir, 0);
+            gpu_dump(("ui_" + name.substr(5)).c_str(), true);
+        }
         return;
     }
     SDL_Event e{};
-    e.type = SDL_KEYDOWN;
-    e.key.keysym.scancode = SDL_GetScancodeFromName(name.c_str());
-    e.key.keysym.sym = SDL_GetKeyFromScancode(e.key.keysym.scancode);
+    e.type = SDL_EVENT_KEY_DOWN;
+    e.key.windowID = SDL_GetWindowID(g_win);
+    e.key.scancode = SDL_GetScancodeFromName(name.c_str());
+    e.key.key = SDL_GetKeyFromScancode(e.key.scancode, SDL_KMOD_NONE, false);
+    e.key.down = true;
     SDL_PushEvent(&e);
-    e.type = SDL_KEYUP;
+    e.type = SDL_EVENT_KEY_UP;
+    e.key.down = false;
     SDL_PushEvent(&e);
 }
 

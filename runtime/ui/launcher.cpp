@@ -1,8 +1,8 @@
 // The launcher. See launcher.h.
 #include "ui/launcher.h"
 #include "game_module.h"
-#include "gx/gl.h"
-#include "gx/texture_pack.h"
+#include "gx/aurora_gpu.h"
+#include "gx/packs.h"
 #include "platform.h"
 #include "prepare.h"
 #include "runtime.h"
@@ -10,12 +10,16 @@
 #include "ui/pick_file.h"
 #include "versions.h"
 #include "ui/ui.h"
+#include <aurora/aurora.h>
+#include <aurora/event.h>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
 #include <thread>
 
 namespace fs = std::filesystem;
+
+bool write_png(const char* path, const uint8_t* rgba, int w, int h);
 
 namespace {
 
@@ -37,9 +41,9 @@ std::string latin1(const uint8_t* p, size_t n) {
 }
 
 // The disc's banner, opening.bnr in its file system: a 96x32 picture and the game's name and
-// description, as a GameCube menu shows them. The picture is written as a TGA, which is what
+// description, as a GameCube menu shows them. The picture is written as a PNG, which is what
 // RmlUi's renderer reads. False if the disc has none; it is not needed for anything.
-bool read_banner(const std::string& tga, std::string* title, std::string* desc) {
+bool read_banner(const std::string& png, std::string* title, std::string* desc) {
     uint8_t hdr[0x430];
     if (!iso_read(0, hdr, sizeof(hdr))) return false;
     const uint32_t fst_off = be32(hdr + 0x424), fst_size = be32(hdr + 0x428);
@@ -61,7 +65,7 @@ bool read_banner(const std::string& tga, std::string* title, std::string* desc) 
     }
     std::vector<uint8_t> bnr(0x1960);
     if (len < bnr.size() || !iso_read(off, bnr.data(), (uint32_t)bnr.size()) || memcmp(bnr.data(), "BNR", 3)) return false;
-    // 96x32 RGB5A3 in 4x4 tiles, to BGRA rows top to bottom.
+    // 96x32 RGB5A3 in 4x4 tiles, to RGBA rows top to bottom.
     std::vector<uint8_t> px(96 * 32 * 4);
     const uint8_t* src = &bnr[0x20];
     for (int ty = 0; ty < 8; ty++)
@@ -76,17 +80,14 @@ bool read_banner(const std::string& tga, std::string* title, std::string* desc) 
                         a = (v >> 12 & 7) * 255 / 7; r = (v >> 8 & 15) * 17; g = (v >> 4 & 15) * 17; b = (v & 15) * 17;
                     }
                     uint8_t* d = &px[((ty * 4 + y) * 96 + tx * 4 + x) * 4];
-                    d[0] = (uint8_t)b; d[1] = (uint8_t)g; d[2] = (uint8_t)r; d[3] = (uint8_t)a;
+                    d[0] = (uint8_t)r; d[1] = (uint8_t)g; d[2] = (uint8_t)b; d[3] = (uint8_t)a;
                 }
-    const uint8_t tga_hdr[18] = {0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 96, 0, 32, 0, 32, 0x28};
-    std::ofstream out(tga, std::ios::binary);
-    out.write((const char*)tga_hdr, sizeof(tga_hdr));
-    out.write((const char*)px.data(), (std::streamsize)px.size());
+    const bool written = write_png(png.c_str(), px.data(), 96, 32);
     const uint8_t* info = &bnr[0x1820];
     *title = latin1(info + 0x40, 0x40);
     if (title->empty()) *title = latin1(info, 0x20);
     *desc = latin1(info + 0xC0, 0x80);
-    return (bool)out;
+    return written;
 }
 
 // The preparation, on its own thread: what it is at, for the page to show.
@@ -122,11 +123,11 @@ void check(const LauncherEnv& env, const Settings& cur) {
         l.checks.push_back(disc_ok ? UiCheck{"Game", "ok", ui_trf("{}, the version this port is made for", v.arg)}
                                    : UiCheck{"Game", "fail", ui_trf(v.message, v.arg)});
         if (disc_ok) {
-            const std::string tga = save_path("banner-" + sha1.substr(0, 12) + ".tga");
+            const std::string png = save_path("banner-" + sha1.substr(0, 12) + ".png");
             plat_make_dirs(save_path(""));
             std::string title, desc;
-            if (read_banner(tga, &title, &desc)) {
-                l.banner = tga;
+            if (read_banner(png, &title, &desc)) {
+                l.banner = png;
                 if (!title.empty()) l.title = title;
                 l.description = desc;
             }
@@ -136,21 +137,23 @@ void check(const LauncherEnv& env, const Settings& cur) {
     if (disc_ok) {
         if (l.preparing) l.checks.push_back({"Prepared", "busy", l.progress_text});
         else if (!g_module.empty()) l.checks.push_back({"Prepared", "ok", ui_tr("Ready to play")});
+        else if (!g_failed.empty()) l.checks.push_back({"Prepared", "fail", g_failed});
+        else l.checks.push_back({"Prepared", "warn", ui_tr("Not yet: Prepare builds the game from your disc, once")});
         // What the whole image's SHA-1, read while preparing, says about the dump: information only.
         std::string id, iso_sha1;
         if (!g_module.empty() && (std::ifstream(fs::path(g_module).parent_path() / "disc.txt") >> id >> iso_sha1)) {
             const DiscVerdict d = versions_dump_info(prepare_versions(), id, iso_sha1);
             l.checks.push_back({"Dump", "ok", ui_trf(d.message, d.arg)});
         }
-        else if (!g_failed.empty()) l.checks.push_back({"Prepared", "fail", g_failed});
-        else l.checks.push_back({"Prepared", "warn", ui_tr("Not yet: Prepare builds the game from your disc, once")});
     }
-    l.checks.push_back({"Graphics", "ok", env.gl});
+    l.checks.push_back({"Graphics", "ok", env.gpu});
     l.checks.push_back(env.audio ? UiCheck{"Sound", "ok", ui_tr("Ready")} : UiCheck{"Sound", "warn", ui_tr("No sound device")});
     int pads = 0;
     std::string pad_name;
-    for (int i = 0; i < SDL_NumJoysticks(); i++)
-        if (SDL_IsGameController(i) && !pads++) pad_name = SDL_GameControllerNameForIndex(i) ? SDL_GameControllerNameForIndex(i) : "Controller";
+    if (SDL_JoystickID* ids = SDL_GetGamepads(&pads)) {
+        if (pads) pad_name = SDL_GetGamepadNameForID(ids[0]) ? SDL_GetGamepadNameForID(ids[0]) : "Controller";
+        SDL_free(ids);
+    }
     l.checks.push_back(pads ? UiCheck{"Controller", "ok", pad_name}
                             : UiCheck{"Controller", "warn", ui_tr("None: the keyboard plays (Settings, Controls)")});
     size_t saves = 0;
@@ -262,29 +265,26 @@ bool launcher_run(LauncherEnv& env, Settings& cur) {
         prepare_start(cur.iso);
     };
     for (;;) {
-        SDL_Event e;
-        while (SDL_PollEvent(&e)) {
-            if (e.type == SDL_QUIT) {
+        for (const AuroraEvent* ev = aurora_update(); ev && ev->type != AURORA_NONE; ev++) {
+            if (ev->type == AURORA_EXIT) {
                 if (g_prep.thread.joinable()) g_prep.thread.detach();
                 return false;
             }
-            const bool scripted_drop = e.type == SDL_USEREVENT && e.user.code == kUiDropEvent;
-            if (e.type == SDL_DROPFILE || scripted_drop) {
-                char* file = scripted_drop ? (char*)e.user.data1 : e.drop.file;
+            if (ev->type != AURORA_SDL_EVENT) continue;
+            SDL_Event e = ev->sdl;
+            const bool scripted_drop = e.type == SDL_EVENT_USER && e.user.code == kUiDropEvent;
+            if (e.type == SDL_EVENT_DROP_FILE || scripted_drop) {
+                const char* file = scripted_drop ? (const char*)e.user.data1 : e.drop.data;
                 set_disc(file);
-                SDL_free(file);
+                if (scripted_drop) SDL_free(e.user.data1);
                 continue;
             }
-            if (e.type == SDL_CONTROLLERDEVICEADDED || e.type == SDL_CONTROLLERDEVICEREMOVED) {
+            if (e.type == SDL_EVENT_GAMEPAD_ADDED || e.type == SDL_EVENT_GAMEPAD_REMOVED) {
                 env.event(e);
                 if (!g_l.preparing) check(env, cur);
                 continue;
             }
-            if (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
-                // Back from the file browser, a pack copied in maybe: look again.
-                gx::texture_pack_reset();
-                settings_pages_update(cur, false);
-            }
+            if (e.type == SDL_EVENT_WINDOW_FOCUS_GAINED) settings_pages_update(cur, false);   // a pack copied in, maybe
             if (ui_event(e)) continue;
             env.event(e);
         }
@@ -360,15 +360,9 @@ bool launcher_run(LauncherEnv& env, Settings& cur) {
             }
         }
 
-        int w, h;
-        SDL_GL_GetDrawableSize(env.win, &w, &h);
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        glViewport(0, 0, w, h);
-        glClearColor(0, 0, 0, 1);
-        glClear(GL_COLOR_BUFFER_BIT);
-        ui_render(w, h);
-        if (!g_l.preparing) ui_script(w, h);
-        SDL_GL_SwapWindow(env.win);
+        ui_frame();
+        gpu_present_again();   // nothing of the game yet: black, and the pages over it
+        if (!g_l.preparing) ui_script();
         SDL_Delay(12);
     }
 }

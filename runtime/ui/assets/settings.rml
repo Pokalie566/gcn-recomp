@@ -33,6 +33,22 @@
 				<span>Fullscreen <span class="note">F11</span></span>
 				<span class="switch" data-class-on="fullscreen"><span class="knob"/></span>
 			</button>
+			<button class="row" data-event-click="toggle('borderless')">
+				<span>Borderless window</span>
+				<span class="switch" data-class-on="borderless"><span class="knob"/></span>
+			</button>
+			<button class="row" data-event-click="toggle('vsync')">
+				<span>Vertical sync <span class="note">no tearing</span></span>
+				<span class="switch" data-class-on="vsync"><span class="knob"/></span>
+			</button>
+			<button class="row stepper" nudge="msaa">
+				<span>Anti-aliasing <span class="note">from the next start</span></span>
+				<span class="value"><span class="arrow" data-event-click="nudge('msaa', -1)">‹</span>{{msaa}}×<span class="arrow" data-event-click="nudge('msaa', 1)">›</span></span>
+			</button>
+			<button class="row stepper" nudge="backend">
+				<span>Graphics API <span class="note">from the next start</span></span>
+				<span class="value"><span class="arrow" data-event-click="nudge('backend', -1)">‹</span>{{backend_label}}<span class="arrow" data-event-click="nudge('backend', 1)">›</span></span>
+			</button>
 		</div>
 
 		<div class="page" data-class-shown="tab == 1">

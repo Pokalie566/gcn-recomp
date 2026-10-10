@@ -28,6 +28,12 @@ bool settings_load(const std::string& path, Settings& s) {
         else if (k == "widescreen") r.widescreen = to_bool(v);
         else if (k == "interpolate") r.interpolate = to_bool(v);
         else if (k == "fullscreen") r.fullscreen = to_bool(v);
+        else if (k == "borderless") r.borderless = to_bool(v);
+        else if (k == "window_w") r.window_w = atoi(v.c_str());
+        else if (k == "window_h") r.window_h = atoi(v.c_str());
+        else if (k == "vsync") r.vsync = to_bool(v);
+        else if (k == "msaa") r.msaa = atoi(v.c_str());
+        else if (k == "backend") r.backend = v;
         else if (k == "textures") r.textures = to_bool(v);
         else if (k == "mouse_aim") r.mouse_aim = to_bool(v);
         else if (k == "rumble") r.rumble = to_bool(v);
@@ -66,6 +72,12 @@ bool settings_save(const std::string& path, const Settings& s) {
         << "widescreen = " << s.widescreen << "\n"
         << "interpolate = " << s.interpolate << "\n"
         << "fullscreen = " << s.fullscreen << "\n"
+        << "borderless = " << s.borderless << "\n"
+        << "window_w = " << s.window_w << "\n"
+        << "window_h = " << s.window_h << "\n"
+        << "vsync = " << s.vsync << "\n"
+        << "msaa = " << s.msaa << "\n"
+        << "backend = " << s.backend << "\n"
         << "textures = " << s.textures << "\n"
         << "mouse_aim = " << s.mouse_aim << "\n"
         << "rumble = " << s.rumble << "\n"
