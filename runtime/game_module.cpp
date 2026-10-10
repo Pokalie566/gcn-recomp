@@ -121,9 +121,10 @@ bool game_module_build(const std::vector<std::string>& sources, const std::vecto
             lnk << " /EXPORT:" << e;
         lnk << "\n";
         std::ofstream bat(dir / "build.bat");
-        bat << "@echo off\r\ncall \"" << bat_env << "\" >nul || exit /b 1\r\n"
-            << "cl @\"" << (dir / "cl.rsp").string() << "\" || exit /b 1\r\n"
-            << "link @\"" << (dir / "link.rsp").string() << "\" || exit /b 1\r\n";
+        bat << "@echo off\r\necho [build] Visual Studio environment\r\ncall \"" << bat_env << "\" >nul || exit /b 1\r\n"
+            << "echo [build] compiling\r\ncl @\"" << (dir / "cl.rsp").string() << "\" || exit /b 1\r\n"
+            << "echo [build] linking\r\nlink @\"" << (dir / "link.rsp").string() << "\" || exit /b 1\r\n"
+            << "echo [build] done\r\n";
     }
     if (progress) progress(0, sources.size());
     if (plat_run({"cmd", "/c", (dir / "build.bat").string()}, log.c_str()) != 0) {
