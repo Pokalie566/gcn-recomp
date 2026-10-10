@@ -241,17 +241,17 @@ int plat_run(const std::vector<std::string>& argv, const char* log) {
         out = CreateFileA(log, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_ALWAYS,
                           FILE_ATTRIBUTE_NORMAL, nullptr);
     }
+    // Nothing to read: a tool that asks for input gets none rather than waiting for ever.
+    HANDLE in = CreateFileA("NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &sa, OPEN_EXISTING, 0, nullptr);
     STARTUPINFOA si{};
     si.cb = sizeof(si);
-    if (out != INVALID_HANDLE_VALUE) {
-        si.dwFlags = STARTF_USESTDHANDLES;
-        si.hStdOutput = si.hStdError = out;
-        si.hStdInput = GetStdHandle(STD_INPUT_HANDLE);
-    }
+    si.dwFlags = STARTF_USESTDHANDLES;
+    si.hStdInput = in;
+    si.hStdOutput = si.hStdError = out != INVALID_HANDLE_VALUE ? out : GetStdHandle(STD_OUTPUT_HANDLE);
     PROCESS_INFORMATION pi{};
-    const BOOL ok = CreateProcessA(nullptr, cmd.data(), nullptr, nullptr, out != INVALID_HANDLE_VALUE,
-                                   CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
+    const BOOL ok = CreateProcessA(nullptr, cmd.data(), nullptr, nullptr, TRUE, CREATE_NO_WINDOW, nullptr, nullptr, &si, &pi);
     if (out != INVALID_HANDLE_VALUE) CloseHandle(out);
+    if (in != INVALID_HANDLE_VALUE) CloseHandle(in);
     if (!ok) return -1;
     WaitForSingleObject(pi.hProcess, INFINITE);
     DWORD code = 1;
