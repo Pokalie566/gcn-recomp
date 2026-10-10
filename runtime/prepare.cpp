@@ -4,6 +4,7 @@
 #include "platform.h"
 #include "runtime.h"
 #include "sha1.h"
+#include "versions.h"
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>
@@ -41,12 +42,14 @@ static std::vector<std::string> python() {
 static uint32_t be32(const uint8_t* p) { return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
 
 // main.dol as the disc stores it: header, then its sections up to the furthest one's end.
-static bool read_dol(const char* iso, std::vector<uint8_t>& dol, std::string* disc_id, std::string* err) {
+static bool read_dol(const char* iso, std::vector<uint8_t>& dol, std::string* disc_id, bool* gamecube, std::string* err) {
     if (!plat_readable(iso)) { *err = std::string("cannot read the disc image ") + iso; return false; }
     di_init(iso);
     uint8_t hdr[0x440];
     if (!iso_read(0, hdr, sizeof(hdr))) { *err = "cannot read the disc header"; return false; }
     *disc_id = std::string((const char*)hdr, 6);
+    *gamecube = be32(hdr + 0x1C) == 0xC2339F3D;
+    if (!*gamecube) return true;
     const uint32_t dol_off = be32(hdr + 0x420);
     uint8_t dh[0x100];
     if (!iso_read(dol_off, dh, sizeof(dh))) { *err = "cannot read main.dol's header"; return false; }
@@ -61,23 +64,23 @@ static bool read_dol(const char* iso, std::vector<uint8_t>& dol, std::string* di
     return true;
 }
 
-bool prepare_check_disc(const char* iso, std::string* dol_sha1, std::string* err) {
+std::vector<DiscVersion> prepare_versions() { return versions_load(prepare_sources().tables + "/versions.txt"); }
+
+bool prepare_check_disc(const char* iso, std::string* dol_sha1, std::string* err, DiscVerdict* verdict) {
     std::vector<uint8_t> dol;
     std::string id;
-    if (!read_dol(iso, dol, &id, err)) return false;
-    if (id != GCN_DISC_ID) {
-        *err = "this disc is " + id + ", not " GCN_DISC_ID " (" GCN_GAME_TITLE ")";
+    bool gamecube = false;
+    if (!read_dol(iso, dol, &id, &gamecube, err)) {
+        if (verdict) *verdict = {false, *err, ""};
         return false;
     }
     Sha1 h;
     h.update(dol.data(), dol.size());
-    *dol_sha1 = h.hex();
-    if (*dol_sha1 != GCN_DOL_SHA1) {
-        *err = "this " GCN_DISC_ID " disc is another revision (main.dol " + *dol_sha1 +
-               ", expected " GCN_DOL_SHA1 ")";
-        return false;
-    }
-    return true;
+    *dol_sha1 = gamecube ? h.hex() : "";
+    const DiscVerdict v = versions_judge(prepare_versions(), gamecube, id, *dol_sha1);
+    if (verdict) *verdict = v;
+    if (!v.playable) *err = v.text();
+    return v.playable;
 }
 
 // A hash of everything a prepared game depends on besides the disc: the recompiler, the
@@ -95,6 +98,7 @@ static std::string inputs_hash() {
     for (const auto& p : files) {
         const std::string name = p.filename().string();
         if (name.size() > 4 && name.compare(name.size() - 4, 4, ".pyc") == 0) continue;
+        if (name == "versions.txt") continue;   // which discs are known, not how one is built
         std::ifstream in(p, std::ios::binary);
         std::string data((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
         h.update(name.data(), name.size());
@@ -158,7 +162,8 @@ bool prepare_game(const char* iso, std::string* module, std::string* err,
     say(0.02f, "extracting main.dol");
     std::vector<uint8_t> dol;
     std::string id;
-    if (!read_dol(iso, dol, &id, err)) return false;
+    bool gamecube;
+    if (!read_dol(iso, dol, &id, &gamecube, err)) return false;
     {
         std::ofstream out(work / "main.dol", std::ios::binary);
         out.write((const char*)dol.data(), (std::streamsize)dol.size());

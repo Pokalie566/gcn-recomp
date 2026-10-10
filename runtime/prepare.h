@@ -29,9 +29,11 @@ struct PrepareSources {
 // out as an app's Resources (recomp/, tables/, symbols.txt, include/), overrides it.
 PrepareSources prepare_sources();
 
-// Reads the disc's ID and main.dol. False, with the reason, if the image cannot be read or is
-// not the game and build this was made for.
-bool prepare_check_disc(const char* iso, std::string* dol_sha1, std::string* err);
+// Reads the disc's ID and main.dol and looks them up in the versions the game knows
+// (versions.h). False, with the reason, if the image cannot be read or is not a version this
+// was made for; `verdict`, if given, has the reason or the version, ready for ui_trf.
+struct DiscVerdict;
+bool prepare_check_disc(const char* iso, std::string* dol_sha1, std::string* err, DiscVerdict* verdict = nullptr);
 
 // Where the module prepared from a main.dol of this SHA-1 is, ready or not.
 std::string prepare_module_path(const std::string& dol_sha1);

@@ -8,6 +8,7 @@
 #include "runtime.h"
 #include "saves.h"
 #include "ui/pick_file.h"
+#include "versions.h"
 #include "ui/ui.h"
 #include <fstream>
 #include <mutex>
@@ -113,9 +114,10 @@ void check(const LauncherEnv& env, const Settings& cur) {
                                                              : ui_trf("Cannot read {}", cur.iso)});
     } else {
         l.checks.push_back({"Disc", "ok", cur.iso.substr(cur.iso.find_last_of("/\\") + 1)});
-        disc_ok = prepare_check_disc(iso, &sha1, &err);
-        l.checks.push_back(disc_ok ? UiCheck{"Game", "ok", ui_trf("{}, the version this port is made for", GCN_DISC_ID)}
-                                   : UiCheck{"Game", "fail", err});
+        DiscVerdict v;
+        disc_ok = prepare_check_disc(iso, &sha1, &err, &v);
+        l.checks.push_back(disc_ok ? UiCheck{"Game", "ok", ui_trf("{}, the version this port is made for", v.arg)}
+                                   : UiCheck{"Game", "fail", ui_trf(v.message, v.arg)});
         if (disc_ok) {
             const std::string tga = save_path("banner-" + sha1.substr(0, 12) + ".tga");
             plat_make_dirs(save_path(""));
