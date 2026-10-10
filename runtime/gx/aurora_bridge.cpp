@@ -19,6 +19,13 @@
 // And it leaves out what the hardware would not draw and Aurora would mishandle: strips of
 // no triangles, and triangles while both faces are culled.
 //
+// At 16:9 (g_widescreen) it also widens the frame, as docs/graphics.md § Widescreen says:
+// Aurora's frame is 854 logical pixels wide (VIConfigure, main.cpp), and every x the game
+// gives in its 640 -- viewport, scissor, EFB copy -- is mapped into it here: stretched when
+// it spans the whole width, moved into the middle 4:3 when narrower. An orthographic draw
+// through a full-width viewport that does not reach both edges (the HUD, text) has its
+// projection squeezed back to 4:3. At 4:3 none of this changes a byte.
+//
 // The result goes to the GPU side in chunks (aurora_bridge.h); this file never calls Aurora,
 // so the benchmark can take the same stream with no GPU at all. The copy to the external
 // framebuffer (BP 0x52 with the display bit) ends a frame.
@@ -29,6 +36,7 @@
 #include <dolphin/gx/GXCommandList.h>
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <condition_variable>
 #include <cstring>
 #include <deque>
@@ -116,7 +124,13 @@ const uint32_t kColorSize[8] = {2, 3, 4, 2, 3, 4, 0, 0};
 
 // A vertex of format `vat`: its size, and where its indexed attributes' indices sit.
 struct Index { uint8_t array, off, bytes; };
-struct Layout { uint32_t size = 0; int n = 0; Index idx[16]; };
+struct Layout {
+    uint32_t size = 0;
+    int n = 0;
+    Index idx[16];
+    int pos_off = -1;     // where the position sits in a vertex (direct, or its index)
+    uint32_t pos_desc = 0;
+};
 
 Layout layout(int vat) {
     const uint32_t lo = g_cp[0x50], hi = g_cp[0x60], a = g_cp[0x70 + vat], b = g_cp[0x80 + vat], c = g_cp[0x90 + vat];
@@ -127,6 +141,8 @@ Layout layout(int vat) {
             for (uint32_t k = 0; k < indices; k++) L.idx[L.n++] = {(uint8_t)array, (uint8_t)L.size, (uint8_t)(desc - 1)}, L.size += desc - 1;
     };
     for (int i = 0; i < 9; i++) L.size += (lo >> i) & 1;   // position/normal matrix index, 8 texture matrix indices
+    L.pos_off = (int)L.size;
+    L.pos_desc = (lo >> 9) & 3;
     attr(0, (lo >> 9) & 3, ((a & 1) ? 3 : 2) * kCompSize[(a >> 1) & 7], 1);
     const bool nbt = (a >> 9) & 1, idx3 = (a >> 31) & 1;
     attr(1, (lo >> 11) & 3, (nbt ? 9 : 3) * kCompSize[(a >> 10) & 7], nbt && idx3 ? 3 : 1);
@@ -263,6 +279,8 @@ void sync() {
     g_wait_ms += ms_since(t);
 }
 
+void set_wide(float wide);   // 16:9, below
+
 void end_frame() {
     if (g_frametime)
         fprintf(stderr, "[ft] f%u %7.2fms  draws %u  vtx %uKB  copies %u  waited on the GPU %.2fms\n", g_frames_submitted.load(),
@@ -282,6 +300,118 @@ void end_frame() {
     g_tex_dirty = 0xFF;   // describe the textures again: each is read once per frame
     g_tlut_gen++;
     g_frame_start = Clock::now();
+    set_wide(g_widescreen ? 4.0f / 3.0f : 1.0f);
+}
+
+// ---- 16:9 ----
+float g_wide = 1.0f;     // the frame's width over 4:3's: 4/3 at 16:9, else 1; set between frames
+uint32_t g_xf[0x1058];   // XF memory and registers as the game wrote them
+bool g_squeezed;         // Aurora has the game's projection squeezed to 4:3 (draw_in_43)
+
+float xf_f(uint32_t a) { float f; memcpy(&f, &g_xf[a], 4); return f; }
+uint32_t f_bits(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }
+int x_offset() { return (int)(g_bp[0x59] & 0x3FF) * 2; }   // the scissor offset, in pixels
+// An x in the game's 640 into the 854: stretched, or kept 4:3 in the middle.
+float wide_x(float x, bool in43) { return in43 ? x + 320.0f * (g_wide - 1.0f) : x * g_wide; }
+
+void xf_out(uint32_t addr, const uint32_t* v, uint32_t n) {
+    Out o;
+    o.u8(0x10).u32((n - 1) << 16 | addr);
+    for (uint32_t i = 0; i < n; i++) o.u32(v[i]);
+}
+
+bool viewport_partial() { return 2.0f * xf_f(0x101A) < 640.0f - 0.5f; }
+
+// The game's viewport, as Aurora must see it.
+void viewport_out() {
+    const bool in43 = viewport_partial();
+    uint32_t v[6];
+    memcpy(v, &g_xf[0x101A], sizeof(v));
+    v[0] = f_bits(in43 ? xf_f(0x101A) : xf_f(0x101A) * g_wide);
+    v[3] = f_bits(wide_x(xf_f(0x101D) - (float)x_offset(), in43) + (float)x_offset());
+    xf_out(0x101A, v, 6);
+}
+
+void projection_out(bool squeeze) {
+    uint32_t v[7];
+    memcpy(v, &g_xf[0x1020], sizeof(v));
+    if (squeeze) v[0] = f_bits(xf_f(0x1020) / g_wide), v[1] = f_bits(xf_f(0x1021) / g_wide);
+    xf_out(0x1020, v, 7);
+    g_squeezed = squeeze;
+}
+
+// The scissor rect, BP 0x20/0x21, x in bits 12-22, both written whichever changed.
+void scissor_out() {
+    const int off = x_offset();
+    const int x0 = (int)(g_bp[0x20] >> 12 & 0x7FF) - off, x1 = (int)(g_bp[0x21] >> 12 & 0x7FF) - off;
+    const bool in43 = x0 > 0 || x1 + 1 < 640;
+    const int n0 = (int)lroundf(wide_x((float)x0, in43)), n1 = (int)lroundf(wide_x((float)(x1 + 1), in43)) - 1;
+    for (uint32_t r : {0x20u, 0x21u}) {
+        const int x = (r == 0x20 ? n0 : n1) + off;
+        Out().u8(GX_LOAD_BP_REG).u32(r << 24 | (g_bp[r] & ~(0x7FFu << 12)) | (uint32_t)(x & 0x7FF) << 12);
+    }
+}
+
+// What the game wrote to XF: kept, and at 16:9 the viewport is sent again, mapped.
+void xf_written(uint32_t addr, const uint8_t* data, uint32_t n) {
+    for (uint32_t i = 0; i < n && addr + i < 0x1058; i++) g_xf[addr + i] = be32(data + 4 * i);
+    if (addr <= 0x1026 && addr + n > 0x1020) g_squeezed = false;
+    if (g_wide != 1.0f && addr <= 0x101F && addr + n > 0x101A) viewport_out();
+}
+
+// An indexed XF load (LOAD_INDX_A-D): matrices from the arrays 12-15 in RAM, kept too.
+void xf_indexed(uint8_t cmd, uint32_t w) {
+    const int array = 12 + ((cmd >> 3) & 3);
+    const uint32_t index = w >> 16, n = ((w >> 12) & 0xF) + 1, addr = w & 0xFFF;
+    const uint32_t src = (g_cp[0xA0 + array] & 0x01FFFFFF) + index * (g_cp[0xB0 + array] & 0xFF);
+    const uint8_t* p = phys_ptr(src);
+    for (uint32_t i = 0; i < n && addr + i < 0x1058; i++) g_xf[addr + i] = be32(p + 4 * i);
+}
+
+// A position component of type `t` (u8 s8 u16 s16 f32) with `frac` fraction bits.
+float pos_comp(const uint8_t* p, uint32_t t, uint32_t frac) {
+    const float k = 1.0f / (float)(1u << frac);
+    switch (t) {
+    case 0: return p[0] * k;
+    case 1: return (int8_t)p[0] * k;
+    case 2: return be16(p) * k;
+    case 3: return (int16_t)be16(p) * k;
+    default: { const uint32_t u = be32(p); float f; memcpy(&f, &u, 4); return f; }
+    }
+}
+
+// An orthographic draw whose vertices do not reach both edges of the frame (in clip space,
+// x = p0 * x + p1 under GX's ortho, x in view space) is a 2D element, not a backdrop.
+bool draw_in_43(const Layout& L, int vat, const uint8_t* v, uint32_t count) {
+    if (g_xf[0x1026] == 0 || L.pos_desc == 0) return false;
+    const uint32_t a = g_cp[0x70 + vat], t = (a >> 1) & 7, frac = (a >> 4) & 0x1F;
+    const uint32_t comps = (a & 1) ? 3 : 2, csize = kCompSize[t] ? kCompSize[t] : 4;
+    const bool per_vertex_mtx = g_cp[0x50] & 1;
+    const float p0 = xf_f(0x1020), p1 = xf_f(0x1021);
+    float lo = 1e30f, hi = -1e30f;
+    for (uint32_t i = 0; i < count; i++, v += L.size) {
+        const uint8_t* q = v + L.pos_off;
+        if (L.pos_desc >= 2) {
+            const uint32_t at = L.pos_desc == 2 ? q[0] : be16(q);
+            q = phys_ptr((g_cp[0xA0] & 0x01FFFFFF) + at * (g_cp[0xB0] & 0xFF));
+        }
+        const float x = pos_comp(q, t, frac), y = pos_comp(q + csize, t, frac), z = comps == 3 ? pos_comp(q + 2 * csize, t, frac) : 0.0f;
+        const uint32_t m = (per_vertex_mtx ? v[0] : g_cp[0x30]) & 0x3F;   // its matrix, a row of 4 per index
+        const float vx = xf_f(m * 4) * x + xf_f(m * 4 + 1) * y + xf_f(m * 4 + 2) * z + xf_f(m * 4 + 3);
+        const float cx = p0 * vx + p1;
+        lo = std::min(lo, cx);
+        hi = std::max(hi, cx);
+    }
+    return lo > -0.98f || hi < 0.98f;
+}
+
+// A new frame's width: what was mapped for the old one is sent again.
+void set_wide(float wide) {
+    if (wide == g_wide) return;
+    g_wide = wide;
+    viewport_out();
+    scissor_out();
+    projection_out(false);
 }
 
 void load_bp(uint32_t w) {
@@ -306,6 +436,12 @@ void load_bp(uint32_t w) {
     case 0x47: sync(); pe_signal_token((uint16_t)v, false); return;
     case 0x48: sync(); pe_signal_token((uint16_t)v, true); return;
     case 0x64: return;
+    case 0x20: case 0x21: case 0x59:   // scissor, and its offset
+        if (g_wide == 1.0f) break;
+        Out().u8(GX_LOAD_BP_REG).u32(reg << 24 | v);
+        scissor_out();
+        viewport_out();
+        return;
     case 0x65: {   // a palette into TMEM
         const uint32_t src = (g_bp[0x64] & 0x1FFFFF) << 5, tmem = (v & 0x3FF) << 9, bytes = ((v >> 10) & 0x7FF) * 32;
         if (tmem < sizeof(g_tmem_tlut))
@@ -322,9 +458,13 @@ void load_bp(uint32_t w) {
         const uint32_t x = g_bp[0x49] & 0x3FF, y = (g_bp[0x49] >> 10) & 0x3FF;
         const uint32_t sw = (g_bp[0x4A] & 0x3FF) + 1, sh = ((g_bp[0x4A] >> 10) & 0x3FF) + 1;
         const bool half = (v >> 9) & 1, depth = (g_bp[0x43] & 7) == 3;
+        // At 16:9 the copy of the whole width takes the whole 854, at 854's resolution; a
+        // narrower one, its 4:3 place in the middle (where its viewport put what it copies).
+        const bool in43 = x > 0 || x + sw < 640;
+        const uint32_t wx = (uint32_t)lroundf(wide_x((float)x, in43)), wsw = in43 ? sw : (uint32_t)lroundf(sw * g_wide);
         g_copies++;
-        Out().cmd(GX_AURORA_LOAD_COPY_SRC).u32(x).u32(y).u32(sw).u32(sh);
-        Out().cmd(GX_AURORA_LOAD_COPY_DST).u32(half ? sw / 2 : sw).u32(half ? sh / 2 : sh).u32(copy_format(v, depth)).u8(0);
+        Out().cmd(GX_AURORA_LOAD_COPY_SRC).u32(wx).u32(y).u32(wsw).u32(sh);
+        Out().cmd(GX_AURORA_LOAD_COPY_DST).u32(half ? wsw / 2 : wsw).u32(half ? sh / 2 : sh).u32(copy_format(v, depth)).u8(0);
         Out().cmd(GX_AURORA_LOAD_COPY_DEST).u64((uint64_t)phys_ptr((g_bp[0x4B] & 0x1FFFFF) << 5));
         break;
     }
@@ -361,11 +501,13 @@ uint32_t parse(const uint8_t* data, uint32_t len, bool partial_ok) {
             need = 5 + 4 * (((be32(p + 1) >> 16) & 0xF) + 1);
             if (avail < need) goto partial;
             put(p, need);
+            xf_written(be32(p + 1) & 0xFFFF, p + 5, (need - 5) / 4);
             pos += need;
             continue;
         case 0x20: case 0x28: case 0x30: case 0x38:  // LOAD_INDX_A..D
             if (avail < 5) goto partial;
             put(p, 5);
+            xf_indexed(cmd, be32(p + 1));
             pos += 5;
             continue;
         case 0x40: {                                 // CALL_DL
@@ -394,6 +536,10 @@ uint32_t parse(const uint8_t* data, uint32_t len, bool partial_ok) {
                 if (n == 0 || ((prim == 0x98 || prim == 0xA0) && n < 3) || (g_cull_all && prim < 0xA8)) continue;
                 load_arrays(L, p + 3, n);
                 load_textures();
+                if (g_wide != 1.0f) {
+                    const bool squeeze = !viewport_partial() && draw_in_43(L, cmd & 7, p + 3, n);
+                    if (squeeze != g_squeezed) projection_out(squeeze);
+                }
                 put(p, need);
                 g_draws++;
                 g_vtx_bytes += need;

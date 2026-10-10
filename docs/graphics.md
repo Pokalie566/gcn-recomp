@@ -24,6 +24,12 @@ tree (but not built into the game) until it is deleted.
   flashlight cone), `blocking-pipelines` (a draw waits for its pipeline rather than being
   skipped the first time a shader is needed, as on the console), `rmlui-hooks` (a translator
   for every text, absolute document paths, and the interface's render target for captures).
+- **16:9**: the rule of § Widescreen below, in the bridge. Aurora's frame is 854 logical
+  pixels wide (`VIConfigure` with `fbWidth` 854, viewport policy FIT so it stays 16:9 in any
+  window); viewports, scissors and EFB copies are mapped from the game's 640 into it
+  (stretched if full-width, moved into the middle 4:3 if not), and an orthographic draw that
+  does not reach both edges gets its projection divided by 4/3. The bridge keeps a copy of
+  XF (direct and indexed loads) to find a draw's view-space x.
 - **Settings**: the internal resolution is `VISetFrameBufferScale`; MSAA and the graphics API
   (`backend`) take effect at the next start; vsync and borderless at once.
 - **Builds**: SDL3 is always built here, static. An app (`GCN_APP`) also builds every other

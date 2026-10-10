@@ -19,6 +19,8 @@
 #include <aurora/aurora.h>
 #include <aurora/event.h>
 #include <aurora/gfx.h>
+#include <dolphin/gx.h>
+#include <dolphin/vi.h>
 #include <SDL3/SDL.h>
 #include <algorithm>
 #include <cerrno>
@@ -271,7 +273,14 @@ static void apply_settings(const Settings& s, const Settings* was) {
     if (changed(&Settings::vsync)) aurora_enable_vsync(s.vsync);
     if (changed(&Settings::textures) || changed(&Settings::textures_off)) gx::texture_packs_apply(s.textures, s.textures_off);
     if (changed(&Settings::bindings)) bindings_resolve(s.bindings);
-    if (was && changed(&Settings::widescreen)) g_widescreen = s.widescreen;
+    if (changed(&Settings::widescreen)) {
+        // At 16:9 Aurora's frame is 854 logical pixels wide, into which the bridge maps what
+        // the game draws in its 640 (gx/aurora_bridge.cpp); the window is letterboxed to it.
+        g_widescreen = s.widescreen;
+        GXRenderModeObj mode = GXNtsc480IntDf;
+        mode.fbWidth = g_widescreen ? 854 : 640;
+        VIConfigure(&mode);
+    }
     g_deadzone = s.deadzone;
     if (was && changed(&Settings::iso)) fprintf(stderr, "settings: the new disc image is for the next start\n");
     audio_set_volume((float)s.volume / 100.0f);
@@ -439,6 +448,8 @@ int main(int argc, char** argv) {
         SDL_DestroySurface(icon);
     }
     SDL_SetWindowTitle(g_win, GCN_GAME_TITLE " (recompiled)");
+    // The frame keeps the game's shape (4:3, or 16:9) whatever the window's, letterboxed.
+    AuroraSetViewportPolicy(AURORA_VIEWPORT_FIT);
     gpu_init();
     gpu_set_dump(dump_dir, dump_every);
 
