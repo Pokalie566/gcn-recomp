@@ -11,7 +11,8 @@
 #   tools/fetch_toolchain.sh <dest> [-u]
 #
 # runtime/prepare.cpp finds them in an app's resources/toolchain, or where GCN_TOOLCHAIN says.
-# Downloads are kept in <dest>/../toolchain-downloads, so a second run is offline.
+# Downloads are kept in $GCN_TOOLCHAIN_CACHE (~/.cache/gcn-recomp-toolchain), so a second
+# run is offline.
 set -eu
 dest=$1
 universal=${2:-}
@@ -65,7 +66,7 @@ py_sha() {
 
 mkdir -p "$dest"
 dest=$(cd "$dest" && pwd)
-cache="$dest/../toolchain-downloads"
+cache=${GCN_TOOLCHAIN_CACHE:-${XDG_CACHE_HOME:-$HOME/.cache}/gcn-recomp-toolchain}
 mkdir -p "$cache"
 
 # fetch <url> <sha256>: the file in the cache, downloaded if it is not there, and checked.
@@ -134,4 +135,10 @@ rm -rf "$dest/zig/doc" "$dest/zig/lib/libcxx" "$dest/zig/lib/libcxxabi" "$dest/z
 for py in "$dest"/python*/lib/python3.* "$dest"/python*/Lib; do
     [ -d "$py" ] && (cd "$py" && rm -rf test idlelib tkinter turtledemo ensurepip lib2to3 pydoc_data site-packages/pip*)
 done
+# Their licences, beside them: zig's (MIT), LLVM's, which zig is built on (Apache-2.0 with
+# LLVM exceptions, the same text as its libunwind's), and Python's (PSF).
+mkdir -p "$dest/licenses"
+cp "$dest/zig/LICENSE" "$dest/licenses/zig.txt"
+cp "$dest/zig/lib/libunwind/LICENSE.TXT" "$dest/licenses/LLVM.txt"
+cp "$(find "$dest"/python* -maxdepth 3 -name LICENSE.txt | head -1)" "$dest/licenses/Python.txt"
 echo "toolchain: zig $ZIG and Python $PY in $dest"
