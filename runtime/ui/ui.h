@@ -105,7 +105,7 @@ bool ui_take_settings(Settings& s);
 
 // GCN_UI_INPUT=<key>,<key>...: those keys (SDL names: Down, Return, Escape...) pressed in
 // the interface, one every 16 frames, through the event queue -- the pages driven as a
-// player would, for checking them. "shot:<name>" writes the window as it is to
+// player would, for checking them ("hold:<key>": pressed and left down). "shot:<name>" writes the window as it is to
 // GCN_UI_SHOT/ui_<name>.png, and "drop:<path>" drops that file on the
 // window. Called by the frontend once a frame while the interface is open and nothing is busy.
 void ui_script();

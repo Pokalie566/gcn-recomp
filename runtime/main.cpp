@@ -7,6 +7,7 @@
 #include "input_script.h"
 #include "input_log.h"
 #include "hw/pad.h"
+#include "pad_bindings.h"
 #include "gx/aurora_bridge.h"
 #include "gx/aurora_gpu.h"
 #include "gx/packs.h"
@@ -62,59 +63,10 @@ void audio_set_volume(float v);
 void audio_set_paused(bool paused);
 
 // ---------------------------------------------------------------------------
-// Input: keyboard + first game controller -> GC pad 1, through the player's bindings
-// (bindings.h), which name their inputs; here the names become SDL's codes.
+// Input: Aurora's pad (pad_bindings.h) -- keyboard and controllers through the player's
+// bindings -- as GC pad 1, the mouse over it.
 // ---------------------------------------------------------------------------
 static SDL_Window* g_win;
-static SDL_Gamepad* g_ctrl;
-
-struct BoundInput {
-    enum Kind { KEY, BUTTON, AXIS } kind;
-    int code;
-    int sign;   // the half of an axis
-};
-static std::vector<BoundInput> g_bound[ACT_COUNT];
-
-static void bindings_resolve(const Bindings& b) {
-    for (int a = 0; a < ACT_COUNT; a++) {
-        g_bound[a].clear();
-        for (const std::string& in : b.inputs[a]) {
-            BoundInput r{BoundInput::KEY, -1, 1};
-            if (!in.compare(0, 4, "key:")) {
-                const SDL_Scancode k = SDL_GetScancodeFromName(in.c_str() + 4);
-                if (k != SDL_SCANCODE_UNKNOWN) r = {BoundInput::KEY, k, 1};
-            } else if (!in.compare(0, 4, "pad:")) {
-                const SDL_GamepadButton k = SDL_GetGamepadButtonFromString(in.c_str() + 4);
-                if (k != SDL_GAMEPAD_BUTTON_INVALID) r = {BoundInput::BUTTON, k, 1};
-            } else if (!in.compare(0, 5, "axis:") && in.size() > 6 && (in[5] == '+' || in[5] == '-')) {
-                const SDL_GamepadAxis k = SDL_GetGamepadAxisFromString(in.c_str() + 6);
-                if (k != SDL_GAMEPAD_AXIS_INVALID) r = {BoundInput::AXIS, k, in[5] == '+' ? 1 : -1};
-            }
-            if (r.code >= 0) g_bound[a].push_back(r);
-            else fprintf(stderr, "settings: bind.%s: no such input \"%s\"\n", kPadActionNames[a], in.c_str());
-        }
-    }
-}
-
-// How far an input is pushed, 0 to 1.
-static float g_deadzone = 0.12f;   // the sticks', a setting
-
-static float read_input(const BoundInput& r, const bool* keys) {
-    switch (r.kind) {
-    case BoundInput::KEY:
-        return keys[r.code] ? 1.0f : 0.0f;
-    case BoundInput::BUTTON:
-        return g_ctrl && SDL_GetGamepadButton(g_ctrl, (SDL_GamepadButton)r.code) ? 1.0f : 0.0f;
-    case BoundInput::AXIS: {
-        if (!g_ctrl) return 0.0f;
-        // A stick at rest is never quite centred; a trigger at rest is.
-        const bool trigger = r.code == SDL_GAMEPAD_AXIS_LEFT_TRIGGER || r.code == SDL_GAMEPAD_AXIS_RIGHT_TRIGGER;
-        const float v = (float)r.sign * SDL_GetGamepadAxis(g_ctrl, (SDL_GamepadAxis)r.code) / 32767.0f;
-        return v > (trigger ? 0.03f : g_deadzone) ? std::min(v, 1.0f) : 0.0f;
-    }
-    }
-    return 0.0f;
-}
 
 // GCN_RAMSNAP=<dir> writes the low 8 MB of guest RAM every GCN_RAMSNAP_EVERY presented
 // frames (default 150), within GCN_RAMSNAP_RANGE=a-b if set: diffing snapshots taken in
@@ -196,35 +148,42 @@ static bool at_rest(const PadState& p) {
            p.cstick_x == 128 && p.cstick_y == 128;
 }
 
+// The rumble: the game's (g_rumble_game, set while it runs the pad's motor and the setting
+// lets it), or the settings' test for half a second. Brought up to date as the pad is read.
+static bool g_rumble_game;
+static std::chrono::steady_clock::time_point g_rumble_test_end;
+static void rumble_test() { g_rumble_test_end = std::chrono::steady_clock::now() + std::chrono::milliseconds(500); }
+static void rumble_update() {
+    const bool on = g_rumble_game || std::chrono::steady_clock::now() < g_rumble_test_end;
+    static bool was;
+    if (on != was) pad_rumble(on);
+    was = on;
+}
+
 // The pad as the player holds it, through the bindings and the mouse.
 static PadState read_pad() {
-    const bool* keys = SDL_GetKeyboardState(nullptr);
-    float amount[ACT_COUNT];
-    for (int a = 0; a < ACT_COUNT; a++) {
-        amount[a] = 0.0f;
-        for (const BoundInput& r : g_bound[a]) amount[a] = std::max(amount[a], read_input(r, keys));
-    }
-    PadState p = pad_from_actions(amount);
+    rumble_update();
+    PadState p = pad_read();
+    p.connected = true;   // the keyboard plays when no controller does
     if (g_mouse_aim) mouse_aim_apply(p);
     return p;
 }
 
 // The controller's name, for the settings' test; the keyboard's part goes without saying.
 static std::string pad_name() {
-    if (!g_ctrl) return ui_tr("No controller: the keyboard plays");
-    const char* n = SDL_GetGamepadName(g_ctrl);
-    return n ? n : ui_tr("Controller");
+    const std::string n = pad_controller_name();
+    return n.empty() ? ui_tr("No controller: the keyboard plays") : n;
 }
 
-static void rumble_test() {
-    if (g_ctrl) SDL_RumbleGamepad(g_ctrl, 0xC000, 0xC000, 500);
-}
 
 static void update_pad(bool paused) {
     PadState p = read_pad();
     if (paused) g_hold_neutral = true;
     else if (g_hold_neutral && at_rest(p)) g_hold_neutral = false;
-    if (g_hold_neutral) p = pad_from_actions(std::vector<float>(ACT_COUNT).data());
+    if (g_hold_neutral) {
+        p = PadState{};
+        p.connected = true;
+    }
     pad_set_state(0, p);
 }
 
@@ -272,7 +231,6 @@ static void apply_settings(const Settings& s, const Settings* was) {
     if (changed(&Settings::borderless)) SDL_SetWindowBordered(g_win, !s.borderless);
     if (changed(&Settings::vsync)) aurora_enable_vsync(s.vsync);
     if (changed(&Settings::textures) || changed(&Settings::textures_off)) gx::texture_packs_apply(s.textures, s.textures_off);
-    if (changed(&Settings::bindings)) bindings_resolve(s.bindings);
     if (changed(&Settings::interpolate)) gpu_set_interpolate(s.interpolate);
     if (changed(&Settings::widescreen)) {
         // At 16:9 Aurora's frame is 854 logical pixels wide, into which the bridge maps what
@@ -282,7 +240,7 @@ static void apply_settings(const Settings& s, const Settings* was) {
         mode.fbWidth = g_widescreen ? 854 : 640;
         VIConfigure(&mode);
     }
-    g_deadzone = s.deadzone;
+    if (changed(&Settings::deadzone)) pad_set_deadzone(s.deadzone);
     if (was && changed(&Settings::iso)) fprintf(stderr, "settings: the new disc image is for the next start\n");
     audio_set_volume((float)s.volume / 100.0f);
     g_mouse_aim = s.mouse_aim;
@@ -455,6 +413,8 @@ int main(int argc, char** argv) {
     gpu_set_dump(dump_dir, dump_every);
 
     const bool audio_ok = audio_open();
+    pad_bindings_init();
+    pad_bindings_migrate(g_saved.old_binds, aurora_dir);
     mouse_aim_init();
     apply_settings(cur, nullptr);
     ui_init(g_win, ui_dir, cur.lang);
@@ -463,7 +423,7 @@ int main(int argc, char** argv) {
         auto take = [&](auto m) { if (s.*m != cur.*m) g_saved.*m = s.*m; };
         take(&Settings::iso), take(&Settings::scale), take(&Settings::widescreen), take(&Settings::interpolate);
         take(&Settings::fullscreen), take(&Settings::textures), take(&Settings::mouse_aim), take(&Settings::rumble);
-        take(&Settings::mouse_sens), take(&Settings::volume), take(&Settings::bindings), take(&Settings::lang);
+        take(&Settings::mouse_sens), take(&Settings::volume), take(&Settings::lang);
         take(&Settings::deadzone), take(&Settings::textures_off), take(&Settings::setup_done);
         take(&Settings::borderless), take(&Settings::window_w), take(&Settings::window_h), take(&Settings::vsync);
         take(&Settings::msaa), take(&Settings::backend);
@@ -488,13 +448,6 @@ int main(int argc, char** argv) {
         s.window_h = h;
         commit(s);
     };
-    auto gamepad_event = [&](const SDL_Event& e) {
-        if (e.type == SDL_EVENT_GAMEPAD_ADDED && !g_ctrl) g_ctrl = SDL_OpenGamepad(e.gdevice.which);
-        else if (e.type == SDL_EVENT_GAMEPAD_REMOVED && g_ctrl && SDL_GetGamepadID(g_ctrl) == e.gdevice.which) {
-            SDL_CloseGamepad(g_ctrl);
-            g_ctrl = nullptr;
-        }
-    };
 
     if (launcher && ui_ready()) {
         LauncherEnv env;
@@ -504,7 +457,6 @@ int main(int argc, char** argv) {
         env.audio = audio_ok;
         env.commit = commit;
         env.event = [&](SDL_Event& e) {
-            gamepad_event(e);
             if (e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_F11 && !e.key.repeat) toggle_fullscreen();
             else if (e.type == SDL_EVENT_WINDOW_RESIZED) window_resized();
         };
@@ -562,7 +514,6 @@ int main(int argc, char** argv) {
             if (ev->type == AURORA_EXIT) running = false;
             if (ev->type != AURORA_SDL_EVENT) continue;
             SDL_Event e = ev->sdl;
-            gamepad_event(e);
             if (e.type == SDL_EVENT_WINDOW_RESIZED) window_resized();
             else if (paused && ui_event(e)) continue;
             else if ((e.type == SDL_EVENT_KEY_DOWN && e.key.scancode == SDL_SCANCODE_ESCAPE && !e.key.repeat) ||
@@ -612,13 +563,7 @@ int main(int argc, char** argv) {
             if (guest_paused() && ui_take_settings(s)) commit(s);
         }
         update_pad(paused);
-        // The game's rumble, to the controller, renewed while it lasts: SDL wants a duration.
-        if (g_ctrl) {
-            const bool on = cur.rumble && !paused && pad_motor(0);
-            static bool was;
-            if (on || was) SDL_RumbleGamepad(g_ctrl, on ? 0xC000 : 0, on ? 0xC000 : 0, on ? 200 : 0);
-            was = on;
-        }
+        g_rumble_game = cur.rumble && !paused && pad_motor(0);
         ui_frame();
         if (paused && guest_paused()) {
             // Nothing more is coming: the last frame again, under the menu.

@@ -1,6 +1,7 @@
 // The interface. See ui.h.
 #include "ui/ui.h"
 #include "gx/aurora_gpu.h"
+#include "pad_bindings.h"
 #include "platform.h"
 #include <RmlUi/Core.h>
 #include <aurora/input.hpp>
@@ -33,7 +34,7 @@ struct BackupRow {
     Rml::String when, saves;
 };
 
-const char* const kActionLabels[ACT_COUNT] = {
+const char* const kActionLabels[kPadRows] = {
     "A", "B", "X", "Y", "Z", "Start",
     "D-pad up", "D-pad down", "D-pad left", "D-pad right",
     "L trigger", "R trigger",
@@ -102,19 +103,16 @@ void setup_update();
 bool starts(const std::string& s, const char* p) { return s.compare(0, strlen(p), p) == 0; }
 
 void rows_update() {
-    g_rows.resize(ACT_COUNT);
-    for (int a = 0; a < ACT_COUNT; a++) {
+    g_rows.resize(kPadRows);
+    for (int a = 0; a < kPadRows; a++) {
         g_rows[a].label = kActionLabels[a];
-        g_rows[a].key = binding_label(g_s.bindings.inputs[a], false);
-        g_rows[a].pad = binding_label(g_s.bindings.inputs[a], true);
+        g_rows[a].key = pad_binding_label(a, false);
+        g_rows[a].pad = pad_binding_label(a, true);
     }
     if (g_capture >= 0)
         (g_capture_pad ? g_rows[g_capture].pad : g_rows[g_capture].key) = ui_tr(g_capture_pad ? "Press a button..." : "Press a key...");
     g_model.DirtyVariable("binds");
 }
-
-// The input that ends a capture replaces the action's inputs from the same device.
-void bind_input(const std::string& input) { binding_replace(g_s.bindings.inputs[g_capture], g_capture_pad, input); }
 
 void capture_end() {
     g_capture = -1;
@@ -127,20 +125,20 @@ bool capture_event(const SDL_Event& e) {
     if (e.type == SDL_EVENT_KEY_DOWN && !e.key.repeat) {
         const SDL_Scancode sc = e.key.scancode;
         if (sc == SDL_SCANCODE_ESCAPE) capture_end();
-        else if (sc == SDL_SCANCODE_DELETE || sc == SDL_SCANCODE_BACKSPACE) { bind_input(""); capture_end(); }
-        else if (!g_capture_pad) { bind_input(std::string("key:") + SDL_GetScancodeName(sc)); capture_end(); }
+        else if (sc == SDL_SCANCODE_DELETE || sc == SDL_SCANCODE_BACKSPACE) { pad_bind_clear(g_capture, g_capture_pad); capture_end(); }
+        else if (!g_capture_pad) { pad_bind_key(g_capture, sc); capture_end(); }
         return true;
     }
     if (e.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
         const auto b = (SDL_GamepadButton)e.gbutton.button;
         if (b == SDL_GAMEPAD_BUTTON_BACK) capture_end();
-        else if (g_capture_pad) { bind_input(std::string("pad:") + SDL_GetGamepadStringForButton(b)); capture_end(); }
+        else if (g_capture_pad) { pad_bind_button(g_capture, b); capture_end(); }
         return true;
     }
+    // An axis only for a row that is one (a stick's way, a trigger); a trigger pulled for a
+    // button row is ignored, and the row waits on.
     if (e.type == SDL_EVENT_GAMEPAD_AXIS_MOTION && g_capture_pad && std::abs((int)e.gaxis.value) > 24000) {
-        const auto a = (SDL_GamepadAxis)e.gaxis.axis;
-        bind_input(std::string("axis:") + (e.gaxis.value < 0 ? "-" : "+") + SDL_GetGamepadStringForAxis(a));
-        capture_end();
+        if (pad_bind_axis(g_capture, e.gaxis.axis, e.gaxis.value < 0 ? -1 : 1)) capture_end();
         return true;
     }
     return e.type != SDL_EVENT_QUIT && !(e.type >= SDL_EVENT_WINDOW_FIRST && e.type <= SDL_EVENT_WINDOW_LAST);
@@ -504,7 +502,7 @@ bool ui_init(SDL_Window* win, const std::string& dir, const std::string& lang) {
         packs_update();
     });
     m.BindEventCallback("reset_bindings", [](H, Rml::Event&, Args) {
-        g_s.bindings = bindings_default();
+        pad_bindings_reset();
         rows_update();
     });
     g_model = m.GetModelHandle();
@@ -693,13 +691,15 @@ void ui_script() {
         }
         return;
     }
+    const bool hold = starts(name, "hold:");   // pressed and left down
     SDL_Event e{};
     e.type = SDL_EVENT_KEY_DOWN;
     e.key.windowID = SDL_GetWindowID(g_win);
-    e.key.scancode = SDL_GetScancodeFromName(name.c_str());
+    e.key.scancode = SDL_GetScancodeFromName(hold ? name.c_str() + 5 : name.c_str());
     e.key.key = SDL_GetKeyFromScancode(e.key.scancode, SDL_KMOD_NONE, false);
     e.key.down = true;
     SDL_PushEvent(&e);
+    if (hold) return;
     e.type = SDL_EVENT_KEY_UP;
     e.key.down = false;
     SDL_PushEvent(&e);

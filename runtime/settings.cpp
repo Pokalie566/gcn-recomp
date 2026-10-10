@@ -48,16 +48,7 @@ bool settings_load(const std::string& path, Settings& s) {
             for (std::string item; std::getline(ss, item, ',');)
                 if (!(item = trim(item)).empty()) r.textures_off.push_back(item);
         }
-        else if (k.compare(0, 5, "bind.") == 0) {
-            for (int a = 0; a < ACT_COUNT; a++) {
-                if (k.compare(5, std::string::npos, kPadActionNames[a]) != 0) continue;
-                auto& list = r.bindings.inputs[a];
-                list.clear();
-                std::stringstream ss(v);
-                for (std::string item; std::getline(ss, item, ',');)
-                    if (!(item = trim(item)).empty()) list.push_back(item);
-            }
-        }
+        else if (k.compare(0, 5, "bind.") == 0) r.old_binds.push_back({k.substr(5), v});
     }
     s = r;
     return true;
@@ -88,14 +79,7 @@ bool settings_save(const std::string& path, const Settings& s) {
         << "setup_done = " << s.setup_done << "\n"
         << "textures_off = ";
     for (size_t i = 0; i < s.textures_off.size(); i++) out << (i ? ", " : "") << s.textures_off[i];
-    out << "\n"
-        << "\n# Pad bindings: key:<key>, pad:<button>, axis:+<axis> or axis:-<axis>, comma-separated.\n";
-    for (int a = 0; a < ACT_COUNT; a++) {
-        out << "bind." << kPadActionNames[a] << " =";
-        for (size_t i = 0; i < s.bindings.inputs[a].size(); i++)
-            out << (i ? ", " : " ") << s.bindings.inputs[a][i];
-        out << "\n";
-    }
+    out << "\n";
     return (bool)out;
 }
 

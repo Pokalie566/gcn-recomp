@@ -4,8 +4,8 @@
 // settings.ini is `key = value` lines, `#` comments. A key it lacks keeps its default, so an
 // old file goes on working when settings are added; one it has that nothing knows is ignored.
 #pragma once
-#include "bindings.h"
 #include <string>
+#include <utility>
 #include <vector>
 
 struct Settings {
@@ -28,7 +28,9 @@ struct Settings {
     std::string lang = "auto";  // the menus': "auto" (the system's), "en" or "fr"; at the next start
     std::vector<std::string> textures_off;   // texture packs turned off, by their folder's name
     bool setup_done = false;    // the first launch's assistant has been through
-    Bindings bindings = bindings_default();
+    // The pad's bindings live with Aurora's (pad_bindings.h); an older settings.ini's
+    // bind.<row> lines are read for taking them over, and not written again.
+    std::vector<std::pair<std::string, std::string>> old_binds;
     bool operator==(const Settings&) const = default;
 };
 

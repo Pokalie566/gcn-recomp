@@ -168,7 +168,7 @@ function(gcn_add_game)
   # both the GPU and SDL.
   set(CORE_SOURCES ${RUNTIME_SOURCES})
   list(REMOVE_ITEM CORE_SOURCES ${RT}/main.cpp ${RT}/audio.cpp ${RT}/audio_sdl.cpp ${RT}/png.cpp
-    ${RT}/gx/aurora_gpu.cpp ${RT}/gx/packs.cpp)
+    ${RT}/gx/aurora_gpu.cpp ${RT}/gx/packs.cpp ${RT}/pad_bindings.cpp)
   list(FILTER CORE_SOURCES EXCLUDE REGEX "/runtime/ui/")
   list(APPEND CORE_SOURCES ${RT}/audio_stub.cpp)
   set(BENCH_SOURCES ${CORE_SOURCES} ${RT}/bench_main.cpp)
@@ -355,7 +355,7 @@ function(gcn_add_game)
     add_executable(${G_NAME} ${RUNTIME_SOURCES} ${G_SOURCES})
     _gcn_set_standards(${G_NAME})
     target_include_directories(${G_NAME} PRIVATE ${RT} ${aurora_SOURCE_DIR}/lib)
-    target_link_libraries(${G_NAME} PRIVATE aurora::core aurora::gx aurora::vi gcn_nod ${GCN_PLATFORM_LIBS} ${CMAKE_DL_LIBS})
+    target_link_libraries(${G_NAME} PRIVATE aurora::core aurora::gx aurora::vi aurora::pad gcn_nod ${GCN_PLATFORM_LIBS} ${CMAKE_DL_LIBS})
     # The system's own file picker (runtime/ui/pick_file.h): AppKit on macOS, comdlg32 on Windows.
     if(APPLE)
       target_sources(${G_NAME} PRIVATE ${RT}/ui/pick_file_mac.mm)
