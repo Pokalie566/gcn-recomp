@@ -157,6 +157,11 @@ PlatFile* plat_open_read(const char* path) {
     return new PlatFile{h};
 }
 
+void plat_close(PlatFile* f) {
+    if (f) CloseHandle(f->h);
+    delete f;
+}
+
 bool plat_read_at(PlatFile* f, uint64_t offset, void* dst, uint32_t len) {
     if (!f) return false;
     // One event per thread rather than per read: the game streams assets off the disc
@@ -186,12 +191,19 @@ bool plat_read_at(PlatFile* f, uint64_t offset, void* dst, uint32_t len) {
 
 
 // ---- modules and processes ----
-std::string plat_executable_dir() {
+std::string plat_executable_path() {
     char buf[MAX_PATH];
     const DWORD n = GetModuleFileNameA(nullptr, buf, MAX_PATH);
-    std::string p(buf, n);
-    const size_t slash = p.find_last_of("\\/");
-    return slash == std::string::npos ? std::string(".") : p.substr(0, slash);
+    return std::string(buf, n);
+}
+
+void plat_restart(char** argv) {
+    _execv(plat_executable_path().c_str(), argv);
+}
+
+void plat_open_folder(const std::string& dir) {
+    plat_make_dirs(dir);
+    plat_run({"explorer", dir}, nullptr);
 }
 
 void* plat_module_open(const char* path, std::string* err) {
@@ -337,6 +349,11 @@ PlatFile* plat_open_read(const char* path) {
     return new PlatFile{fd};
 }
 
+void plat_close(PlatFile* f) {
+    if (f) close(f->fd);
+    delete f;
+}
+
 bool plat_read_at(PlatFile* f, uint64_t offset, void* dst, uint32_t len) {
     if (!f) return false;
     uint8_t* out = (uint8_t*)dst;
@@ -359,7 +376,7 @@ bool plat_read_at(PlatFile* f, uint64_t offset, void* dst, uint32_t len) {
 #endif
 extern char** environ;
 
-std::string plat_executable_dir() {
+std::string plat_executable_path() {
     std::string p;
 #ifdef __APPLE__
     char buf[4096];
@@ -373,8 +390,20 @@ std::string plat_executable_dir() {
     const ssize_t n = readlink("/proc/self/exe", buf, sizeof(buf) - 1);
     if (n > 0) p.assign(buf, (size_t)n);
 #endif
-    const size_t slash = p.find_last_of('/');
-    return slash == std::string::npos ? std::string(".") : p.substr(0, slash);
+    return p;
+}
+
+void plat_restart(char** argv) {
+    execv(plat_executable_path().c_str(), argv);
+}
+
+void plat_open_folder(const std::string& dir) {
+    plat_make_dirs(dir);
+#ifdef __APPLE__
+    plat_run({"open", dir}, "/dev/null");
+#else
+    plat_run({"xdg-open", dir}, "/dev/null");
+#endif
 }
 
 void* plat_module_open(const char* path, std::string* err) {
@@ -411,6 +440,12 @@ int plat_run(const std::vector<std::string>& argv, const char* log) {
 // ===========================================================================
 // Shared
 // ===========================================================================
+std::string plat_executable_dir() {
+    const std::string p = plat_executable_path();
+    const size_t slash = p.find_last_of("\\/");
+    return slash == std::string::npos ? std::string(".") : p.substr(0, slash);
+}
+
 void plat_make_dirs(const std::string& path) {
     if (path.empty()) return;
     std::error_code ec;

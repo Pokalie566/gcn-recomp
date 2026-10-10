@@ -1,0 +1,41 @@
+<rml>
+<head>
+	<title>Launcher</title>
+	<link type="text/rcss" href="base.rcss"/>
+	<link type="text/rcss" href="theme.rcss"/>
+</head>
+<body class="launcher" data-model="ui">
+	<div class="hero">
+		<img class="banner" data-if="has_banner" data-attr-src="banner"/>
+		<p class="kicker">Recompiled</p>
+		<h1>{{game_title}}</h1>
+		<p class="desc">{{description}}</p>
+	</div>
+
+	<div class="checks">
+		<div class="check" data-for="c : checks">
+			<span class="dot" data-class-ok="c.state == 'ok'" data-class-warn="c.state == 'warn'" data-class-fail="c.state == 'fail'" data-class-busy="c.state == 'busy'"/>
+			<span class="clabel">{{c.label}}</span>
+			<span class="cdetail">{{c.detail}}</span>
+		</div>
+	</div>
+
+	<div class="actions menu">
+		<button class="primary" autofocus="autofocus" data-class-disabled="!can_play" data-event-click="play">Play</button>
+		<button data-if="can_prepare" data-event-click="prepare">Prepare the game</button>
+		<button data-if="can_install_tools" data-event-click="install_tools">Install the tools</button>
+		<button data-event-click="saves">Saves</button>
+		<button data-event-click="settings">Settings</button>
+		<button data-event-click="quit">Quit</button>
+	</div>
+
+	<div class="progress" data-if="preparing">
+		<div class="track"><div class="fill" data-style-width="progress_width"/></div>
+		<p>{{progress_text}}</p>
+	</div>
+
+	<div class="drop" data-if="no_disc">Drop your disc image (.iso or .ciso) on this window</div>
+
+	<p class="hints"><span><span class="k">Enter / A</span>Select</span><span><span class="k">↑ ↓</span>Move</span></p>
+</body>
+</rml>

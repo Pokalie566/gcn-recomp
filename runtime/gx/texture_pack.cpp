@@ -103,6 +103,7 @@ namespace {
 bool g_init;
 bool g_dump;
 bool g_enabled = true;
+size_t g_dds;   // DDS files in the pack, which are not read
 std::string g_dump_dir;
 std::unordered_map<std::string, std::string> g_index;   // name -> file
 std::unordered_set<std::string> g_dumped;
@@ -131,7 +132,7 @@ void init() {
         std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return (char)tolower(c); });
         std::string name = it->path().stem().string();
         if (name.compare(0, 5, "tex1_") != 0) continue;
-        if (ext == ".dds") { dds++; continue; }
+        if (ext == ".dds") { dds++; g_dds++; continue; }
         if (ext != ".png") continue;
         // "_arb": mipmaps the pack drew itself; generated ones stand in for them.
         if (const size_t arb = name.rfind("_arb"); arb != std::string::npos) name.erase(arb, 4);
@@ -171,6 +172,12 @@ const char* texture_dump_dir() { return g_dump ? g_dump_dir.c_str() : nullptr; }
 
 void texture_pack_enable_dump() { g_dump = true; }
 void texture_pack_set_enabled(bool on) { g_enabled = on; }
+
+size_t texture_pack_count(size_t* dds) {
+    init();
+    if (dds) *dds = g_dds;
+    return g_index.size();
+}
 
 void texture_pack_apply(const TexName& n, TexData& td, uint32_t game_levels) {
     init();

@@ -50,6 +50,9 @@ void texture_pack_enable_dump();
 // what they have until texture_cache_clear.
 void texture_pack_set_enabled(bool on);
 
+// How many textures the pack has, and how many DDS files it holds that are not read.
+size_t texture_pack_count(size_t* dds);
+
 // For a renderer that writes the dumps: the directory, or null when not dumping.
 const char* texture_dump_dir();
 

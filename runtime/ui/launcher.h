@@ -1,0 +1,33 @@
+// The launcher: what the app shows first. It checks what the game needs -- the disc, the
+// prepared game and the tools that prepare it, graphics, sound, a controller, the memory
+// card, a texture pack -- prepares the game from the disc when it must, and starts it. A
+// disc image dropped on the window is the one to play.
+//
+// The saves page belongs to it and to the pause menu alike: the game's saves on the card,
+// and copies of the card, made each time the game starts and on demand, kept in backups/
+// beside it.
+#pragma once
+#include "settings.h"
+#include <SDL.h>
+#include <functional>
+#include <string>
+
+struct LauncherEnv {
+    SDL_Window* win = nullptr;
+    std::string gl;                                // the GL renderer, as it names itself
+    bool audio = false;                            // whether the sound device opened
+    std::function<void(const Settings&)> commit;   // a change of settings: applied and saved
+    std::function<void(SDL_Event&)> event;         // the frontend's own events: controllers, F11
+};
+
+// Runs until the player plays -- true, with the game's module loaded and `cur.iso` its disc
+// -- or quits.
+bool launcher_run(LauncherEnv& env, Settings& cur);
+
+// The saves page brought up to date; `message` says what was just done.
+void saves_update(const std::string& message = "");
+// The saves page's actions (UI_BACKUP, UI_RESTORE with its index, UI_OPEN_SAVES). False for
+// any other.
+bool saves_act(int action, int index);
+// The copy of the card made as the game starts.
+void saves_backup_on_start();

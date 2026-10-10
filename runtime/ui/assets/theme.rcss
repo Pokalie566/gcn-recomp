@@ -17,7 +17,7 @@ body.settings { background-color: #000000b0; }
 .tabs button:focus { background-color: #4d9bff; color: #06101f; }
 
 .row:focus, .bind button:focus { background-color: #4d9bff; color: #06101f; }
-.row .note { color: #8f96a6; }
+.note { color: #8f96a6; }
 .row:focus .note { color: #0b2142; }
 .switch { background-color: #ffffff2a; }
 .switch.on { background-color: #4d9bff; }
@@ -28,3 +28,20 @@ h2 { color: #7fb4ff; }
 .bind button { background-color: #ffffff12; }
 
 scrollbarvertical sliderbar { background-color: #ffffff30; }
+
+body.launcher { decorator: linear-gradient(to bottom right, #10141c 0%, #07080b 100%); }
+.desc, .cdetail { color: #9ba1b0; }
+.dot.ok { background-color: #4fd17a; }
+.dot.warn { background-color: #f0b440; }
+.dot.fail { background-color: #ff5d5d; }
+.dot.busy { background-color: #4d9bff; }
+.actions button.primary { background-color: #ffffff1a; }
+.actions button.primary:focus { background-color: #4d9bff; color: #06101f; }
+.actions button.disabled { color: #ffffff44; }
+.actions button.disabled:focus { background-color: #ffffff22; color: #ffffff66; }
+.progress .track { background-color: #ffffff1c; }
+.progress .fill { background-color: #4d9bff; }
+.drop { border-color: #4d9bff80; color: #c7d8f5; background-color: #4d9bff12; }
+.message { color: #7fb4ff; }
+button.small { background-color: #ffffff18; }
+button.small:focus { background-color: #4d9bff; color: #06101f; }

@@ -107,6 +107,14 @@ std::string prepare_module_path(const std::string& dol_sha1) {
 
 bool prepare_tools_present(std::string* missing) {
     missing->clear();
+#ifdef __APPLE__
+    // Without the Command Line Tools, cc and python3 are stubs that put up Apple's installer
+    // when run; asking xcode-select first keeps a check from doing that by itself.
+    if (plat_run({"xcode-select", "-p"}, "/dev/null") != 0) {
+        *missing = "Apple's Command Line Tools";
+        return false;
+    }
+#endif
     // `cc --version` and `python3 --version` run quietly when the tools are there. On macOS
     // without the Command Line Tools, both are stubs that fail (and offer to install them).
     const std::string null = "/dev/null";

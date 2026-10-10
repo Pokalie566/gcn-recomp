@@ -49,9 +49,16 @@ std::string plat_find_file(const char* dir, const char* suffix);
 struct PlatFile;
 PlatFile* plat_open_read(const char* path);
 bool plat_read_at(PlatFile* f, uint64_t offset, void* dst, uint32_t len);
+void plat_close(PlatFile* f);
 
 // The directory of the running executable, without a trailing separator.
+std::string plat_executable_path();
 std::string plat_executable_dir();
+// Starts this program again in place of this process, with these arguments (null-ended).
+// Returns only if it could not.
+void plat_restart(char** argv);
+// Shows a directory in the system's file browser, creating it first.
+void plat_open_folder(const std::string& dir);
 
 // A shared library loaded at run time -- the recompiled game, see game_module.h. Null and a
 // reason in `err` if it cannot be loaded.

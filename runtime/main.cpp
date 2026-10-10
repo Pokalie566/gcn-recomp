@@ -14,6 +14,8 @@
 #endif
 #include <SDL.h>
 #include <algorithm>
+#include <cerrno>
+#include <cstring>
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
@@ -25,6 +27,7 @@
 #include "gx/texture_pack.h"
 #include "prepare.h"
 #include "settings.h"
+#include "ui/launcher.h"
 #include "ui/ui.h"
 #include <vector>
 
@@ -311,6 +314,19 @@ int main(int argc, char** argv) {
     g_argv = argv;
     // GCN_SAVE_DIR=<dir>: this machine's state for the game -- card, settings, shader cache,
     // the prepared game -- somewhere else than saves/. A scripted run uses an empty one.
+    //
+    // In a macOS app (<Name>.app/Contents/MacOS/<exe>), what preparing the game and the
+    // menus need is in Contents/Resources (GCN_RESOURCES), and this machine's state is the
+    // user's, in ~/Library/Application Support/<Name>.
+    static std::string app_res, app_data;
+    const std::string exe_dir = plat_executable_dir();
+    if (const size_t app = exe_dir.rfind(".app/Contents/MacOS"); app != std::string::npos && !getenv("GCN_RESOURCES")) {
+        app_res = exe_dir.substr(0, app) + ".app/Contents/Resources";
+        setenv("GCN_RESOURCES", app_res.c_str(), 1);
+        const std::string name = exe_dir.substr(exe_dir.rfind('/', app) + 1, app - exe_dir.rfind('/', app) - 1);
+        if (const char* home = getenv("HOME")) app_data = std::string(home) + "/Library/Application Support/" + name;
+        g_save_dir = app_data.c_str();
+    }
     if (const char* d = getenv("GCN_SAVE_DIR")) g_save_dir = d;
     const std::string settings_path = save_path("settings.ini");
     if (!settings_load(settings_path, g_saved)) {
@@ -332,6 +348,7 @@ int main(int argc, char** argv) {
     // unpaced run.
     if (const char* ip = getenv("GCN_INTERPOLATE"); ip && !strcmp(ip, "force")) g_interpolate = 2;
     bool prepare_only = false;   // --prepare: build the game module from the disc, then quit
+    bool no_launcher = false;    // --no-launcher: straight into the game
     // The settings' own options are settings_from_args's.
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--log-all")) for (auto& e : g_log_enabled) e = true;
@@ -350,50 +367,61 @@ int main(int argc, char** argv) {
         else if (!strcmp(argv[i], "--cull-swap")) gx::g_cull_swap = true;
         else if (!strcmp(argv[i], "--dump-textures")) gx::texture_pack_enable_dump();
         else if (!strcmp(argv[i], "--prepare")) prepare_only = true;
+        else if (!strcmp(argv[i], "--no-launcher")) no_launcher = true;
         else if (!strncmp(argv[i], "--dump-dir=", 11)) gx::g_dump_dir = argv[i] + 11;
         else if (!strncmp(argv[i], "--dump-every=", 13)) gx::g_dump_every = atoi(argv[i] + 13);
     }
     plat_install_crash_handlers(on_interrupt, on_fault);
 
-    if (!plat_readable(iso)) {
-        fprintf(stderr, "No game image found. Put your " GCN_GAME_TITLE " .iso or .ciso in rom/ or pass its path.\n");
-        return 1;
-    }
-    // The game's code is a module built from the disc, not part of this executable.
-    if (!game_module_ensure(iso, prepare_only)) return 1;
-    if (prepare_only) return 0;
-    mem_init();
-    timing_init();
-    if (fast) clock_set_scale(0);  // run as fast as the host allows; the game sees 60 Hz regardless
-    input_script_init();
-
-    // Every run records what the guest read from the controller, so that a route to
-    // wherever something went wrong can be played back with --replay=<dir>. See
-    // input_log.h. --no-input-log turns it off; --input-log=<dir> names the directory.
-    // The memory card is snapshotted into the log, and a replay runs on a scratch copy
-    // of that snapshot rather than the real card.
-    std::string replay_card;
-    if (!replay_dir.empty()) {
-        if (!input_replay_load(replay_dir, replay_card)) return 1;
-        if (!replay_card.empty()) g_memcard_path = replay_card.c_str();
-    }
-    // GCN_MEMCARD=<file>: another card than the player's, created formatted if absent --
-    // for a scripted run, which must neither see nor touch the real saves.
-    if (const char* mc = getenv("GCN_MEMCARD"); mc && replay_card.empty()) {
-        replay_card = mc;
-        g_memcard_path = replay_card.c_str();
-    }
-    if (input_log) {
-        if (input_log_dir.empty()) {
-            char stamp[64];
-            time_t now = time(nullptr);
-            strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", localtime(&now));
-            input_log_dir = save_path(std::string("inputs/") + stamp);
+    // The launcher comes first unless the run is scripted or asks not to: then the disc and
+    // the game's module must already be there, and anything missing is said on stderr.
+    const bool launcher = !headless && !prepare_only && !no_launcher && replay_dir.empty() && !getenv("GCN_INPUT");
+    if (!launcher) {
+        if (!plat_readable(iso)) {
+            fprintf(stderr, "No game image found. Put your " GCN_GAME_TITLE " .iso or .ciso in rom/ or pass its path.\n");
+            return 1;
         }
-        input_log_start(input_log_dir, replay_card.empty() ? save_path("memcard_a.raw") : replay_card);
+        // The game's code is a module built from the disc, not part of this executable.
+        if (!game_module_ensure(iso, prepare_only)) return 1;
+        if (prepare_only) return 0;
     }
+
+    // What the guest needs before it boots, once its module is loaded.
+    std::string replay_card;
+    auto start_guest = [&]() -> bool {
+        mem_init();
+        timing_init();
+        if (fast) clock_set_scale(0);  // run as fast as the host allows; the game sees 60 Hz regardless
+        input_script_init();
+        // Every run records what the guest read from the controller, so that a route to
+        // wherever something went wrong can be played back with --replay=<dir>. See
+        // input_log.h. --no-input-log turns it off; --input-log=<dir> names the directory.
+        // The memory card is snapshotted into the log, and a replay runs on a scratch copy
+        // of that snapshot rather than the real card.
+        if (!replay_dir.empty()) {
+            if (!input_replay_load(replay_dir, replay_card)) return false;
+            if (!replay_card.empty()) g_memcard_path = replay_card.c_str();
+        }
+        // GCN_MEMCARD=<file>: another card than the player's, created formatted if absent --
+        // for a scripted run, which must neither see nor touch the real saves.
+        if (const char* mc = getenv("GCN_MEMCARD"); mc && replay_card.empty()) {
+            replay_card = mc;
+            g_memcard_path = replay_card.c_str();
+        }
+        if (input_log) {
+            if (input_log_dir.empty()) {
+                char stamp[64];
+                time_t now = time(nullptr);
+                strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", localtime(&now));
+                input_log_dir = save_path(std::string("inputs/") + stamp);
+            }
+            input_log_start(input_log_dir, replay_card.empty() ? save_path("memcard_a.raw") : replay_card);
+        }
+        return true;
+    };
 
     if (headless) {
+        if (!start_guest()) return 1;
         uint32_t entry = boot_load(iso);
         threads_start_boot(entry);
         for (;;) {
@@ -444,12 +472,47 @@ int main(int argc, char** argv) {
     if (first_person) gx::render_set_first_person(true);
     if (gx::g_dump_dir) plat_make_dirs(gx::g_dump_dir);
 
-    audio_open();
+    const bool audio_ok = audio_open();
     mouse_aim_init();
     apply_settings(win, cur, nullptr);
     // The menus' documents: beside the executable, or in an app's resources.
     const char* res = getenv("GCN_RESOURCES");
     ui_init(win, res ? std::string(res) + "/ui" : plat_executable_dir() + "/ui");
+    // A change the player made: applied, and saved over settings.ini's.
+    auto commit = [&](const Settings& s) {
+        auto take = [&](auto m) { if (s.*m != cur.*m) g_saved.*m = s.*m; };
+        take(&Settings::iso), take(&Settings::scale), take(&Settings::widescreen), take(&Settings::interpolate);
+        take(&Settings::fullscreen), take(&Settings::textures), take(&Settings::mouse_aim);
+        take(&Settings::mouse_sens), take(&Settings::volume), take(&Settings::bindings);
+        settings_save(settings_path, g_saved);
+        apply_settings(win, s, &cur);
+        cur = s;
+    };
+    auto toggle_fullscreen = [&] {
+        Settings s = cur;
+        s.fullscreen = !s.fullscreen;
+        commit(s);
+        ui_set_settings(cur);
+    };
+
+    if (launcher && ui_ready()) {
+        LauncherEnv env;
+        env.win = win;
+        env.gl = glGetString(GL_RENDERER) ? (const char*)glGetString(GL_RENDERER) : "OpenGL";
+        env.audio = audio_ok;
+        env.commit = commit;
+        env.event = [&](SDL_Event& e) {
+            if (e.type == SDL_CONTROLLERDEVICEADDED && !g_ctrl) g_ctrl = SDL_GameControllerOpen(e.cdevice.which);
+            else if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_F11 && !e.key.repeat) toggle_fullscreen();
+        };
+        if (cur.iso.empty()) cur.iso = iso_default;   // what it finds by itself, for this run
+        if (!launcher_run(env, cur)) plat_exit_now(0);
+        iso = cur.iso.c_str();
+    } else if (launcher) {
+        // No interface to launch from: as a run without the launcher.
+        if (!plat_readable(iso) || !game_module_ensure(iso, false)) return 1;
+    }
+    if (!start_guest()) return 1;
     if (g_mouse_aim && !hidden) SDL_SetRelativeMouseMode(SDL_TRUE);
 
     uint32_t entry = boot_load(iso);
@@ -470,6 +533,7 @@ int main(int argc, char** argv) {
         SDL_SetRelativeMouseMode(SDL_FALSE);
         SDL_SetWindowTitle(win, GCN_GAME_TITLE " (recompiled) - paused");
         ui_show_pause(cur);
+        saves_update();
     };
     auto resume = [&] {
         if (!guest_paused()) return;   // still on its way to stopping
@@ -482,16 +546,6 @@ int main(int argc, char** argv) {
         SDL_SetWindowTitle(win, GCN_GAME_TITLE " (recompiled)");
     };
     const char* pause_at = getenv("GCN_PAUSE_AT");
-    // A change the player made: applied, and saved over settings.ini's.
-    auto commit = [&](const Settings& s) {
-        auto take = [&](auto m) { if (s.*m != cur.*m) g_saved.*m = s.*m; };
-        take(&Settings::iso), take(&Settings::scale), take(&Settings::widescreen), take(&Settings::interpolate);
-        take(&Settings::fullscreen), take(&Settings::textures), take(&Settings::mouse_aim);
-        take(&Settings::mouse_sens), take(&Settings::volume), take(&Settings::bindings);
-        settings_save(settings_path, g_saved);
-        apply_settings(win, s, &cur);
-        cur = s;
-    };
 
     bool running = true;
     uint32_t frames = 0;
@@ -507,12 +561,8 @@ int main(int argc, char** argv) {
             else if ((e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_ESCAPE && !e.key.repeat) ||
                      (e.type == SDL_CONTROLLERBUTTONDOWN && e.cbutton.button == SDL_CONTROLLER_BUTTON_BACK))
                 paused ? resume() : pause();
-            else if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_F11 && !e.key.repeat) {
-                Settings s = cur;
-                s.fullscreen = !s.fullscreen;
-                commit(s);
-                ui_set_settings(cur);
-            }
+            else if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_F11 && !e.key.repeat)
+                toggle_fullscreen();
             else if (paused) continue;
             else if (g_mouse_aim && e.type == SDL_MOUSEMOTION && SDL_GetRelativeMouseMode())
                 g_aim.move((float)e.motion.xrel, (float)e.motion.yrel);
@@ -524,11 +574,20 @@ int main(int argc, char** argv) {
                 SDL_SetRelativeMouseMode(SDL_TRUE);
         }
         if (paused) {
-            switch (ui_take_action()) {
-            case UI_RESUME: resume(); break;
-            case UI_QUIT: running = false; break;
-            case UI_NONE: break;
-            }
+            const UiAction a = ui_take_action();
+            if (a == UI_RESUME) resume();
+            else if (a == UI_QUIT) running = false;
+            else if (a == UI_LAUNCHER) {
+                // The game cannot be unloaded, so the launcher is this program started again.
+                // The card is already on disk: it is written as the game writes it.
+                input_log_end();
+                std::vector<char*> args;
+                for (int i = 0; i < argc; i++)
+                    if (strcmp(argv[i], "--no-launcher")) args.push_back(argv[i]);
+                args.push_back(nullptr);
+                plat_restart(args.data());
+                fprintf(stderr, "cannot start again: %s\n", strerror(errno));
+            } else saves_act(a, ui_action_index());
             Settings s = cur;
             if (guest_paused() && ui_take_settings(s)) commit(s);
         }
@@ -545,8 +604,7 @@ int main(int argc, char** argv) {
                 else if (gx::render_present_last()) {
                     glBindFramebuffer(GL_FRAMEBUFFER, 0);
                     ui_render(dw, dh);
-                    ui_shot_tour(dw, dh);
-                    ui_script();
+                    ui_script(dw, dh);
                     SDL_GL_SwapWindow(win);
                 }
                 SDL_Delay(12);

@@ -16,11 +16,18 @@ default), as Esc would, then resumes. A run paused that way must play out exactl
 that is not: the guest stops at an interrupt poll, the virtual clock with it, and the time
 paused is not caught up (`guest_pause` in runtime.h).
 
-With it, the pause menu can be checked without anyone at the keyboard (runtime/ui/ui.h):
-`GCN_UI_SHOT=<dir>` writes each page of it there as a PNG, and `GCN_UI_INPUT=Down,Return,...`
-presses those keys in it, one every 16 frames, as a player would. Pausing at frame 300,
-`Down,Return,Down,Right,Down,Return,Escape,Escape` sets the internal scale to 3 and turns on
-16:9, which settings.ini and the frames after the pause must both show.
+The interface -- launcher, pause menu, settings, saves -- can be checked without anyone at
+the keyboard (runtime/ui/ui.h): `GCN_UI_INPUT=Down,Return,...` presses those keys in it, one
+every 16 frames, as a player would; `shot:<name>` in the list writes the window to
+`GCN_UI_SHOT/ui_<name>.png`, and `drop:<path>` drops a disc image on the launcher. With
+`--no-launcher` and pausing at frame 300, `Down,Down,Return,Down,Right,Down,Return,Escape,Escape`
+sets the internal scale to 3 and turns on 16:9, which settings.ini and the frames after the
+pause must both show. A run that starts from the launcher and prepares the game from
+scratch, as a player's first would, is `drop:<iso>,Down,Return,Return` with an empty
+`GCN_SAVE_DIR` and the executable alone in a directory, without its module.
+
+The launcher is skipped by `--no-launcher` and by any scripted run (`GCN_INPUT`, `--replay`,
+`--headless`, `--prepare`), which then needs the disc and the game's module to be there.
 
 ## The game module
 

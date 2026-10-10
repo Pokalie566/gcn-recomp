@@ -25,7 +25,7 @@ body.pause .side {
 	top: 0;
 	bottom: 0;
 	width: 440dp;
-	padding-top: 210dp;
+	padding-top: 150dp;
 }
 
 .kicker {
@@ -115,10 +115,11 @@ body.pause .hints { left: 96dp; }
 	transition: background-color 0.12s cubic-out;
 }
 
-.row .note {
+.note {
 	font-size: 15dp;
 	margin-left: 12dp;
 }
+p.note { margin-left: 0; }
 
 .switch {
 	display: block;
@@ -181,4 +182,104 @@ body.settings .hints {
 	left: 50%;
 	margin-left: -440dp;
 	bottom: 26dp;
+}
+
+/* ---- Launcher ---- */
+
+body.launcher .hero {
+	position: absolute;
+	left: 72dp;
+	top: 64dp;
+	width: 500dp;
+}
+.banner {
+	display: block;
+	width: 288dp;
+	height: 96dp;
+	margin-bottom: 18dp;
+	border-radius: 6dp;
+}
+body.launcher h1 { margin: 2dp 0 6dp 0; font-size: 52dp; }
+.desc { font-size: 18dp; }
+
+.checks {
+	position: absolute;
+	left: 72dp;
+	top: 330dp;
+	width: 500dp;
+}
+.check {
+	display: flex;
+	align-items: center;
+	min-height: 30dp;
+	font-size: 17dp;
+}
+.dot {
+	display: block;
+	width: 10dp;
+	height: 10dp;
+	border-radius: 5dp;
+	margin-right: 14dp;
+	flex-shrink: 0;
+}
+.dot.busy { animation: 0.7s sine-in-out infinite alternate pulse; }
+@keyframes pulse { from { opacity: 0.3; } to { opacity: 1; } }
+.clabel { width: 150dp; flex-shrink: 0; font-weight: bold; }
+.cdetail { font-size: 15dp; }
+
+body.launcher .actions {
+	position: absolute;
+	right: 72dp;
+	top: 210dp;
+	width: 300dp;
+}
+.actions button.primary { font-weight: bold; }
+
+.progress {
+	position: absolute;
+	left: 72dp;
+	right: 72dp;
+	bottom: 86dp;
+	font-size: 16dp;
+}
+.progress .track {
+	height: 8dp;
+	border-radius: 4dp;
+	margin-bottom: 8dp;
+}
+.progress .fill {
+	height: 8dp;
+	border-radius: 4dp;
+	transition: width 0.3s cubic-out;
+}
+
+.drop {
+	position: absolute;
+	left: 72dp;
+	right: 72dp;
+	bottom: 86dp;
+	padding: 18dp;
+	text-align: center;
+	font-size: 18dp;
+	border-radius: 12dp;
+	border-width: 2dp;
+}
+body.launcher .hints { left: 72dp; }
+
+/* ---- Saves ---- */
+
+.line {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	min-height: 40dp;
+	padding: 0 18dp;
+}
+p.line { display: block; padding-top: 8dp; font-size: 16dp; }
+.message { padding: 6dp 18dp; font-size: 16dp; }
+button.small {
+	font-size: 16dp;
+	padding: 4dp 16dp;
+	border-radius: 8dp;
+	transition: background-color color 0.12s cubic-out;
 }

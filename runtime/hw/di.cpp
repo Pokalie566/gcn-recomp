@@ -34,7 +34,11 @@ bool iso_read(uint64_t offset, void* dst, uint32_t len) {
     return true;
 }
 
+// Opens a disc image, closing the one before: a launcher reads one disc after another.
 void di_init(const char* iso_path) {
+    plat_close(g_iso);
+    g_ciso_block = 0;
+    g_ciso_map.clear();
     g_iso = plat_open_read(iso_path);
     if (!g_iso) fatal("cannot open disc image %s", iso_path);
     uint8_t hdr[0x8000];

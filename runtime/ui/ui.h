@@ -1,28 +1,60 @@
-// The in-game interface: the pause menu and the settings, drawn with RmlUi over the game.
+// The interface: the launcher, the pause menu, the settings and the saves, drawn with RmlUi.
 //
 // The documents and their style are in runtime/ui/assets, copied beside the executable as
 // ui/, with whatever the game project adds or replaces there (gcn_add_game's UI): its own
 // theme.rcss, typically. Layout is in dp, one dp being a 720th of the window's height, so
-// the menus keep their proportions at any size.
+// the pages keep their proportions at any size.
 //
-// The frontend (main.cpp) owns the pause: it opens the menu when it pauses the game, feeds
-// it events while it is open, and takes back what the player asked for. Settings change
-// only while the guest is stopped, which is why the frontend asks for them then.
+// The frontend owns what happens: the launcher (launcher.h) and the pause (main.cpp) open
+// their page, feed it events while it is open, and take back what the player asked for.
+// Settings change only while the guest is stopped (or before it starts), which is why the
+// frontend asks for them then.
 #pragma once
+#include "saves.h"
 #include "settings.h"
 #include <SDL.h>
 #include <string>
+#include <vector>
 
 // False, with the reason printed, if the interface cannot start (no ui/ directory): the
 // game then runs without it, Esc still pausing.
 bool ui_init(SDL_Window* win, const std::string& dir);
+bool ui_ready();
 
 // The pause menu, over the game, showing these settings.
 void ui_show_pause(const Settings& s);
-// The settings the menus show, changed from elsewhere (F11) while they are open.
+// The settings the pages show, changed from elsewhere (F11) while they are open.
 void ui_set_settings(const Settings& s);
 void ui_hide();
 bool ui_open();
+
+// ---- The launcher ----
+struct UiCheck {
+    std::string label;
+    std::string state;   // "ok", "warn", "fail" or "busy"
+    std::string detail;
+};
+struct UiLauncher {
+    std::string title = GCN_GAME_TITLE;
+    std::string description;   // from the disc's banner
+    std::string banner;        // the banner as an image file, or empty
+    std::vector<UiCheck> checks;
+    bool no_disc = true;       // the hint to drop one on the window shows
+    bool can_play = false, can_prepare = false, can_install_tools = false;
+    bool preparing = false;
+    float progress = 0;        // 0..1
+    std::string progress_text;
+};
+void ui_show_launcher(const Settings& s, const UiLauncher& l);
+void ui_set_launcher(const UiLauncher& l);
+
+// ---- The saves page: what is on the card, and the copies of it ----
+struct UiSaves {
+    std::vector<CardFile> files;      // the game's own, on the card
+    std::vector<CardBackup> backups;
+    std::string message;              // what the last action did
+};
+void ui_set_saves(const UiSaves& s);
 
 // Hands an event to the interface while it is open. True if it took it.
 bool ui_event(SDL_Event& e);
@@ -30,18 +62,27 @@ bool ui_event(SDL_Event& e);
 // Draws the interface over what is in the window framebuffer, `w` x `h` pixels.
 void ui_render(int w, int h);
 
-enum UiAction { UI_NONE, UI_RESUME, UI_QUIT };
+enum UiAction {
+    UI_NONE, UI_RESUME, UI_QUIT,
+    UI_PLAY, UI_PREPARE, UI_INSTALL_TOOLS,   // the launcher's
+    UI_LAUNCHER,                             // the pause menu's: back to the launcher
+    UI_BACKUP, UI_RESTORE, UI_OPEN_SAVES,    // the saves page's; UI_RESTORE with ui_action_index
+};
 // What the player chose since the last call.
 UiAction ui_take_action();
+// The backup UI_RESTORE is about, as an index into the last UiSaves' backups.
+int ui_action_index();
 
 // True, with `s` updated, when the player has changed a setting since the last call.
 bool ui_take_settings(Settings& s);
 
-// GCN_UI_SHOT=<dir>: each page of the menu written there as a PNG, then the game resumed.
-// Called by the frontend once a frame while the menu is open; true while it is at it.
-bool ui_shot_tour(int w, int h);
-
 // GCN_UI_INPUT=<key>,<key>...: those keys (SDL names: Down, Return, Escape...) pressed in
-// the menu, one every 16 frames, through the event queue -- the menus driven as a player
-// would, for checking them. Called by the frontend once a frame while the menu is open.
-void ui_script();
+// the interface, one every 16 frames, through the event queue -- the pages driven as a
+// player would, for checking them. "shot:<name>" in the list writes the window as it is to
+// GCN_UI_SHOT/ui_<name>.png, and "drop:<path>" drops that file on the window. Called by the
+// frontend once a frame, after ui_render, while the interface is open and nothing is busy.
+void ui_script(int w, int h);
+
+// A dropped file, as GCN_UI_INPUT sends one: an SDL_USEREVENT with this code and the path,
+// SDL_strdup'd, in data1. Not a forged SDL_DROPFILE, which SDL2 on SDL3 cannot pass through.
+constexpr int kUiDropEvent = 0x44524F50;

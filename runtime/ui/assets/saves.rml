@@ -1,0 +1,38 @@
+<rml>
+<head>
+	<title>Saves</title>
+	<link type="text/rcss" href="base.rcss"/>
+	<link type="text/rcss" href="theme.rcss"/>
+</head>
+<body class="settings saves" data-model="ui">
+	<div class="window">
+		<h1>Saves</h1>
+		<div class="page shown">
+			<button class="row" autofocus="autofocus" data-event-click="backup">
+				<span>Make a copy of the card now</span>
+			</button>
+			<button class="row" data-event-click="open_saves">
+				<span>Show the folder <span class="note">the card, its copies, the settings</span></span>
+			</button>
+			<p class="message">{{saves_message}}</p>
+
+			<h2>ON THE MEMORY CARD</h2>
+			<div class="line" data-for="s : saves">
+				<span>{{s.comment}}</span>
+				<span class="note">{{s.when}}</span>
+			</div>
+			<p class="line note" data-if="saves.size == 0">No save yet.</p>
+
+			<h2>COPIES OF THE CARD</h2>
+			<p class="line note" data-if="in_game">The game makes a copy each time it starts and keeps the last 10. Restore one from the launcher, with the game stopped.</p>
+			<p class="line note" data-if="!in_game">A copy is made each time the game starts; the last 10 are kept. Restoring one first copies the card as it is.</p>
+			<div class="line" data-for="b, i : backups">
+				<span>{{b.when}} <span class="note">{{b.saves}}</span></span>
+				<button class="small" data-if="!in_game" data-event-click="restore(i)">Restore</button>
+			</div>
+			<p class="line note" data-if="backups.size == 0">No copy yet.</p>
+		</div>
+	</div>
+	<p class="hints"><span><span class="k">Enter / A</span>Select</span><span><span class="k">Esc / B</span>Back</span></p>
+</body>
+</rml>
