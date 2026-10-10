@@ -136,14 +136,14 @@ void check(const LauncherEnv& env, const Settings& cur) {
     if (disc_ok) {
         if (l.preparing) l.checks.push_back({"Prepared", "busy", l.progress_text});
         else if (!g_module.empty()) l.checks.push_back({"Prepared", "ok", ui_tr("Ready to play")});
+        else if (!g_failed.empty()) l.checks.push_back({"Prepared", "fail", g_failed});
+        else l.checks.push_back({"Prepared", "warn", ui_tr("Not yet: Prepare builds the game from your disc, once")});
         // What the whole image's SHA-1, read while preparing, says about the dump: information only.
         std::string id, iso_sha1;
         if (!g_module.empty() && (std::ifstream(fs::path(g_module).parent_path() / "disc.txt") >> id >> iso_sha1)) {
             const DiscVerdict d = versions_dump_info(prepare_versions(), id, iso_sha1);
             l.checks.push_back({"Dump", "ok", ui_trf(d.message, d.arg)});
         }
-        else if (!g_failed.empty()) l.checks.push_back({"Prepared", "fail", g_failed});
-        else l.checks.push_back({"Prepared", "warn", ui_tr("Not yet: Prepare builds the game from your disc, once")});
     }
     l.checks.push_back({"Graphics", "ok", env.gl});
     l.checks.push_back(env.audio ? UiCheck{"Sound", "ok", ui_tr("Ready")} : UiCheck{"Sound", "warn", ui_tr("No sound device")});
