@@ -207,7 +207,11 @@ void plat_open_folder(const std::string& dir) {
 }
 
 void* plat_module_open(const char* path, std::string* err) {
+    // A module that cannot load is an error to report, not a dialog box to wait on.
+    DWORD old_mode = 0;
+    SetThreadErrorMode(SEM_FAILCRITICALERRORS | SEM_NOOPENFILEERRORBOX, &old_mode);
     HMODULE m = LoadLibraryA(path);
+    SetThreadErrorMode(old_mode, nullptr);
     if (!m && err) *err = "LoadLibrary failed (" + std::to_string(GetLastError()) + ")";
     return (void*)m;
 }
