@@ -172,7 +172,7 @@ function(gcn_add_game)
   # and the front end it was fed by are left out of it.
   set(GL_FRONTEND_SOURCES ${RT}/gx/render_gl.cpp ${RT}/gx/gl_load.cpp ${RT}/gx/shadergen.cpp ${RT}/gx/cmd.cpp
     ${RT}/gx/xf.cpp ${RT}/gx/texture.cpp ${RT}/gx/texture_pack.cpp ${RT}/gx/interp.cpp)
-  set(AURORA_SOURCES ${RT}/gx/aurora_bridge.cpp ${RT}/gx/aurora_gpu.cpp ${RT}/gx/packs.cpp)
+  set(AURORA_SOURCES ${RT}/gx/aurora_bridge.cpp ${RT}/gx/aurora_gpu.cpp ${RT}/gx/aurora_interp.cpp ${RT}/gx/packs.cpp)
   set(GAME_SOURCES ${RUNTIME_SOURCES})
   list(REMOVE_ITEM GAME_SOURCES ${GL_FRONTEND_SOURCES})
 

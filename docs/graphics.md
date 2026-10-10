@@ -30,6 +30,15 @@ tree (but not built into the game) until it is deleted.
   (stretched if full-width, moved into the middle 4:3 if not), and an orthographic draw that
   does not reach both edges gets its projection divided by 4/3. The bridge keeps a copy of
   XF (direct and indexed loads) to find a draw's view-space x.
+- **60 fps** (`gx/aurora_interp.h`): Aurora transforms on the GPU, so the in-between frame
+  is the new frame's stream replayed with its XF transforms (position, normal and texture
+  matrices, projection, light positions) halfway to the previous frame's. Loads are matched
+  through the draws they lead to (signature: primitive, size, first and last indices), so
+  objects drawn in another order keep their own matrices; jumps and cuts are left alone as
+  before. For that the bridge makes its chunks self-contained: indexed XF loads are read
+  and sent as direct ones (always), and while interpolating the vertex arrays are copied
+  into the chunk (`Chunk::held`), so the GPU side can hold a frame back without the game
+  rewriting what it points at. Interval between frames measured from arrival, not display.
 - **Settings**: the internal resolution is `VISetFrameBufferScale`; MSAA and the graphics API
   (`backend`) take effect at the next start; vsync and borderless at once.
 - **Builds**: SDL3 is always built here, static. An app (`GCN_APP`) also builds every other

@@ -689,8 +689,7 @@ void ui_script() {
     if (starts(name, "shot:")) {
         if (const char* dir = getenv("GCN_UI_SHOT")) {
             plat_make_dirs(dir);
-            gpu_set_dump(dir, 0);
-            gpu_dump(("ui_" + name.substr(5)).c_str(), true);
+            gpu_dump(std::string(dir) + "/ui_" + name.substr(5) + ".png", true);
         }
         return;
     }

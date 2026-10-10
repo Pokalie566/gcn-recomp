@@ -273,6 +273,7 @@ static void apply_settings(const Settings& s, const Settings* was) {
     if (changed(&Settings::vsync)) aurora_enable_vsync(s.vsync);
     if (changed(&Settings::textures) || changed(&Settings::textures_off)) gx::texture_packs_apply(s.textures, s.textures_off);
     if (changed(&Settings::bindings)) bindings_resolve(s.bindings);
+    if (changed(&Settings::interpolate)) gpu_set_interpolate(s.interpolate);
     if (changed(&Settings::widescreen)) {
         // At 16:9 Aurora's frame is 854 logical pixels wide, into which the bridge maps what
         // the game draws in its 640 (gx/aurora_bridge.cpp); the window is letterboxed to it.

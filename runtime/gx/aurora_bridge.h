@@ -15,11 +15,21 @@
 
 namespace gx {
 
+// Where in a chunk an XF load or a draw starts, for the in-between frames (aurora_interp.h).
+struct Mark {
+    uint32_t off;
+    uint32_t sig;   // 0: an XF load; else a draw, and what it draws as far as the stream says
+};
+
 struct Chunk {
     std::vector<uint8_t> bytes;                     // Aurora's FIFO, big-endian like the hardware's
     std::vector<std::unique_ptr<uint8_t[]>> keep;   // what `bytes` points at besides guest RAM (palettes)
+    std::vector<Mark> marks;                        // its XF loads and draws, in order
     uint64_t seq = 0;
     bool frame_end = false;                         // the last chunk of a frame: present it
+    // Points at nothing the guest may change (vertex arrays copied too): the GPU side may
+    // hold it, and say it is done before processing it. See g_hold_frames.
+    bool held = false;
 };
 
 // GPU side. The next chunk, waiting up to `timeout_ms`; false if none came.
@@ -29,5 +39,9 @@ void chunk_done(uint64_t seq);
 
 // Frames the game has finished, the input scripts' time base.
 extern std::atomic<uint32_t> g_frames_submitted;
+
+// Set by the GPU side for frames it will hold back (the in-between frames of
+// aurora_interp.h): from the next frame on, the chunks are `held`.
+extern std::atomic<bool> g_hold_frames;
 
 }  // namespace gx

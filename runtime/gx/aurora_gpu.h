@@ -13,6 +13,11 @@
 
 // Before the guest starts.
 void gpu_init();
+// 60 fps: an in-between frame between two of the game's (aurora_interp.h), the game's own
+// shown half a frame later. GCN_INTERPOLATE=1 forces it on, 0 off, "force" draws one before
+// every frame without waiting (for dumping them, frame_NNNNN_i.png, from an unpaced run);
+// GCN_INTERPLOG=1 prints each frame's verdict.
+void gpu_set_interpolate(bool on);
 // Takes what the guest has sent, up to `timeout_ms` for the first chunk; presents each frame
 // it finishes. True if a frame was presented.
 bool gpu_pump(int timeout_ms);
@@ -20,10 +25,11 @@ bool gpu_pump(int timeout_ms);
 // guest is stopped, or before it runs.
 void gpu_present_again();
 // --dump-dir=DIR --dump-every=N: every Nth presented frame as DIR/frame_NNNNN.png
-// (GCN_DUMP_RANGE=a-b: only those). And the last frame presented, as DIR/<name>.png -- with
-// the interface over it, as the window showed it, for `with_ui`.
+// (GCN_DUMP_RANGE=a-b: only those).
 void gpu_set_dump(const char* dir, int every);
-void gpu_dump(const char* name, bool with_ui);
+// The last frame presented, as a PNG at `path` -- with the interface over it, as the window
+// showed it, for `with_ui`.
+void gpu_dump(const std::string& path, bool with_ui);
 uint32_t gpu_frames_presented();
 // The graphics device, as it names itself.
 std::string gpu_device_name();

@@ -14,7 +14,8 @@
 //   - palettes (BP 0x64/0x65 loads into TMEM, 0x98+ per texture): kept here, a copy per
 //     load, and GX_AURORA_LOAD_TLUT for the texture that reads one;
 //   - EFB copies (BP 0x49-0x52): GX_AURORA_LOAD_COPY_SRC/DST/DEST, then the trigger;
-//   - display lists (CALL_DL): read here, command by command, from guest memory.
+//   - display lists (CALL_DL): read here, command by command, from guest memory;
+//   - indexed XF loads (LOAD_INDX_A-D): the matrices read here and sent as direct loads.
 //
 // And it leaves out what the hardware would not draw and Aurora would mishandle: strips of
 // no triangles, and triangles while both faces are culled.
@@ -49,6 +50,7 @@ void pe_signal_finish();
 namespace gx {
 
 std::atomic<uint32_t> g_frames_submitted{0};
+std::atomic<bool> g_hold_frames{false};
 State g_state;   // the BP and CP registers as last written (gx.h); XF goes to Aurora only
 
 namespace {
@@ -71,10 +73,13 @@ uint64_t g_next_seq = 1, g_done_seq = 0;
 uint32_t g_frames_queued;           // frame ends handed over and not yet done
 std::deque<uint64_t> g_frame_seqs;  // their chunks' seq, oldest first
 
+bool g_hold;   // g_hold_frames, as it was when this frame began
+
 uint64_t hand_over(bool frame_end) {
     std::lock_guard<std::mutex> lk(g_q_mutex);
     g_cur.seq = g_next_seq++;
     g_cur.frame_end = frame_end;
+    g_cur.held = g_hold;
     if (frame_end) {
         g_frames_queued++;
         g_frame_seqs.push_back(g_cur.seq);
@@ -161,17 +166,32 @@ Layout layout(int vat) {
 // have indexed into it so far (per base address, kept from frame to frame), given to Aurora
 // before the draw that needs it; it grows by doubling, since each growth is a fresh copy of
 // the whole array (growing to each draw's furthest index was 146 copies of 3 arrays in one
-// frame). The matrix arrays (12-15) are only read from, by indexed XF loads, and are given
-// the rest of RAM when the game sets them.
+// frame). The matrix arrays (12-15) are only read by indexed XF loads, which are sent as
+// direct ones (xf_indexed): Aurora is not told of them.
+//
+// A frame the GPU side holds (g_hold) points at copies of its arrays instead, made once per
+// stretch between two waits on the GPU, after which the game may have rewritten them.
 std::unordered_map<uint32_t, uint32_t> g_extent;
-struct Sent { uint32_t base = ~0u, size = 0; } g_sent[16];
+struct Sent { const uint8_t* ptr = nullptr; uint32_t size = 0; } g_sent[16];
+std::unordered_map<uint32_t, std::pair<const uint8_t*, uint32_t>> g_copied;
 
 uint32_t ram_left(uint32_t pa) { return pa < 0x01800000 ? 0x01800000 - pa : 0; }
 
+const uint8_t* array_data(uint32_t base, uint32_t size) {
+    if (!g_hold) return phys_ptr(base);
+    auto& c = g_copied[base];
+    if (c.first && c.second >= size) return c.first;
+    g_cur.keep.emplace_back(new uint8_t[size]);
+    memcpy(g_cur.keep.back().get(), phys_ptr(base), size);
+    c = {g_cur.keep.back().get(), size};
+    return c.first;
+}
+
 void send_array(int a, uint32_t base, uint32_t size) {
-    if (g_sent[a].base == base && g_sent[a].size == size) return;
-    g_sent[a] = {base, size};
-    Out().cmd(GX_AURORA_LOAD_ARRAYBASE + a).u64((uint64_t)phys_ptr(base)).u32(size).u8(0);
+    const uint8_t* ptr = array_data(base, size);
+    if (g_sent[a].ptr == ptr && g_sent[a].size == size) return;
+    g_sent[a] = {ptr, size};
+    Out().cmd(GX_AURORA_LOAD_ARRAYBASE + a).u64((uint64_t)ptr).u32(size).u8(0);
 }
 
 void load_arrays(const Layout& L, const uint8_t* v, uint32_t count) {
@@ -277,6 +297,7 @@ void sync() {
     const auto t = Clock::now();
     wait_done(hand_over(false));
     g_wait_ms += ms_since(t);
+    g_copied.clear();   // the game may now rewrite what was copied
 }
 
 void set_wide(float wide);   // 16:9, below
@@ -300,6 +321,10 @@ void end_frame() {
     g_tex_dirty = 0xFF;   // describe the textures again: each is read once per frame
     g_tlut_gen++;
     g_frame_start = Clock::now();
+    // Each frame sends its arrays again, so it can be replayed on its own.
+    for (Sent& a : g_sent) a = {};
+    g_copied.clear();
+    g_hold = g_hold_frames.load();
     set_wide(g_widescreen ? 4.0f / 3.0f : 1.0f);
 }
 
@@ -315,6 +340,7 @@ int x_offset() { return (int)(g_bp[0x59] & 0x3FF) * 2; }   // the scissor offset
 float wide_x(float x, bool in43) { return in43 ? x + 320.0f * (g_wide - 1.0f) : x * g_wide; }
 
 void xf_out(uint32_t addr, const uint32_t* v, uint32_t n) {
+    g_cur.marks.push_back({(uint32_t)g_cur.bytes.size(), 0});
     Out o;
     o.u8(0x10).u32((n - 1) << 16 | addr);
     for (uint32_t i = 0; i < n; i++) o.u32(v[i]);
@@ -359,13 +385,18 @@ void xf_written(uint32_t addr, const uint8_t* data, uint32_t n) {
     if (g_wide != 1.0f && addr <= 0x101F && addr + n > 0x101A) viewport_out();
 }
 
-// An indexed XF load (LOAD_INDX_A-D): matrices from the arrays 12-15 in RAM, kept too.
+// An indexed XF load (LOAD_INDX_A-D): matrices from the arrays 12-15 in RAM, read now -- as
+// the hardware would, at this point of the stream -- and sent as a direct load, so that the
+// stream holds the values and can be replayed (or interpolated) later.
 void xf_indexed(uint8_t cmd, uint32_t w) {
     const int array = 12 + ((cmd >> 3) & 3);
     const uint32_t index = w >> 16, n = ((w >> 12) & 0xF) + 1, addr = w & 0xFFF;
     const uint32_t src = (g_cp[0xA0 + array] & 0x01FFFFFF) + index * (g_cp[0xB0 + array] & 0xFF);
     const uint8_t* p = phys_ptr(src);
-    for (uint32_t i = 0; i < n && addr + i < 0x1058; i++) g_xf[addr + i] = be32(p + 4 * i);
+    uint32_t v[16];
+    for (uint32_t i = 0; i < n; i++) v[i] = be32(p + 4 * i);
+    for (uint32_t i = 0; i < n && addr + i < 0x1058; i++) g_xf[addr + i] = v[i];
+    xf_out(addr, v, n);
 }
 
 // A position component of type `t` (u8 s8 u16 s16 f32) with `frac` fraction bits.
@@ -403,6 +434,19 @@ bool draw_in_43(const Layout& L, int vat, const uint8_t* v, uint32_t count) {
         hi = std::max(hi, cx);
     }
     return lo > -0.98f || hi < 0.98f;
+}
+
+// What a draw draws, as far as the stream tells from one frame to the next: its primitive,
+// format and size, and the indices of its first and last vertices (a mesh's do not change
+// as it moves; positions given directly would).
+uint32_t draw_sig(const Layout& L, const uint8_t* p, uint32_t n) {
+    uint32_t h = 2166136261u;
+    auto mix = [&](uint32_t v) { h = (h ^ v) * 16777619u; };
+    mix(p[0]);
+    mix(n);
+    for (const uint8_t* v : {p + 3, p + 3 + (n - 1) * L.size})
+        for (int k = 0; k < L.n; k++) mix(L.idx[k].bytes == 1 ? v[L.idx[k].off] : be16(v + L.idx[k].off));
+    return h | 1;
 }
 
 // A new frame's width: what was mapped for the old one is sent again.
@@ -474,10 +518,7 @@ void load_bp(uint32_t w) {
 
 void load_cp(uint8_t reg, uint32_t v) {
     g_cp[reg] = v;
-    if (reg >= 0xA0 && reg <= 0xAF) {   // array base: a pointer, for Aurora (load_arrays)
-        if (reg >= 0xAC) send_array(reg - 0xA0, v & 0x01FFFFFF, ram_left(v & 0x01FFFFFF));
-        return;
-    }
+    if (reg >= 0xA0 && reg <= 0xAF) return;   // array base: a pointer, for Aurora (load_arrays)
     Out().u8(GX_LOAD_CP_REG).u8(reg).u32(v);
 }
 
@@ -500,13 +541,13 @@ uint32_t parse(const uint8_t* data, uint32_t len, bool partial_ok) {
             if (avail < 5) goto partial;
             need = 5 + 4 * (((be32(p + 1) >> 16) & 0xF) + 1);
             if (avail < need) goto partial;
+            g_cur.marks.push_back({(uint32_t)g_cur.bytes.size(), 0});
             put(p, need);
             xf_written(be32(p + 1) & 0xFFFF, p + 5, (need - 5) / 4);
             pos += need;
             continue;
         case 0x20: case 0x28: case 0x30: case 0x38:  // LOAD_INDX_A..D
             if (avail < 5) goto partial;
-            put(p, 5);
             xf_indexed(cmd, be32(p + 1));
             pos += 5;
             continue;
@@ -540,6 +581,7 @@ uint32_t parse(const uint8_t* data, uint32_t len, bool partial_ok) {
                     const bool squeeze = !viewport_partial() && draw_in_43(L, cmd & 7, p + 3, n);
                     if (squeeze != g_squeezed) projection_out(squeeze);
                 }
+                g_cur.marks.push_back({(uint32_t)g_cur.bytes.size(), draw_sig(L, p, n)});
                 put(p, need);
                 g_draws++;
                 g_vtx_bytes += need;
