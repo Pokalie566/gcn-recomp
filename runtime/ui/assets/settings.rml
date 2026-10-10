@@ -10,7 +10,7 @@
 		<div class="tabs">
 			<button id="tab0" autofocus="autofocus" data-class-active="tab == 0" data-event-click="tab(0)">Graphics</button>
 			<button id="tab1" data-class-active="tab == 1" data-event-click="tab(1)">Controls</button>
-			<button id="tab2" data-class-active="tab == 2" data-event-click="tab(2)">Audio</button>
+			<button id="tab2" data-class-active="tab == 2" data-event-click="tab(2)">System</button>
 		</div>
 
 		<div class="page" data-class-shown="tab == 0">
@@ -64,6 +64,10 @@
 			<button class="row stepper" nudge="volume">
 				<span>Volume</span>
 				<span class="value"><span class="arrow" data-event-click="nudge('volume', -1)">‹</span>{{volume}} %<span class="arrow" data-event-click="nudge('volume', 1)">›</span></span>
+			</button>
+			<button class="row stepper" nudge="lang">
+				<span>Language <span class="note">at the next start</span></span>
+				<span class="value"><span class="arrow" data-event-click="nudge('lang', -1)">‹</span>{{lang_label}}<span class="arrow" data-event-click="nudge('lang', 1)">›</span></span>
 			</button>
 		</div>
 	</div>

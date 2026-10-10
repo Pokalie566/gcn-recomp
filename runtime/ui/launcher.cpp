@@ -108,12 +108,12 @@ void check(const LauncherEnv& env, const Settings& cur) {
     std::string sha1, err;
     bool disc_ok = false;
     if (l.no_disc) {
-        l.checks.push_back({"Disc", "fail", cur.iso.empty() ? "None yet: drop your disc image on this window"
-                                                             : "Cannot read " + cur.iso});
+        l.checks.push_back({"Disc", "fail", cur.iso.empty() ? ui_tr("None yet: drop your disc image on this window")
+                                                             : ui_trf("Cannot read {}", cur.iso)});
     } else {
         l.checks.push_back({"Disc", "ok", cur.iso.substr(cur.iso.find_last_of("/\\") + 1)});
         disc_ok = prepare_check_disc(iso, &sha1, &err);
-        l.checks.push_back(disc_ok ? UiCheck{"Game", "ok", GCN_DISC_ID ", the version this port is made for"}
+        l.checks.push_back(disc_ok ? UiCheck{"Game", "ok", ui_trf("{}, the version this port is made for", GCN_DISC_ID)}
                                    : UiCheck{"Game", "fail", err});
         if (disc_ok) {
             const std::string tga = save_path("banner-" + sha1.substr(0, 12) + ".tga");
@@ -129,32 +129,32 @@ void check(const LauncherEnv& env, const Settings& cur) {
     g_module = disc_ok ? game_module_find(prepare_module_path(sha1)) : "";
     if (disc_ok) {
         if (l.preparing) l.checks.push_back({"Prepared", "busy", l.progress_text});
-        else if (!g_module.empty()) l.checks.push_back({"Prepared", "ok", "Ready to play"});
+        else if (!g_module.empty()) l.checks.push_back({"Prepared", "ok", ui_tr("Ready to play")});
         else if (!g_failed.empty()) l.checks.push_back({"Prepared", "fail", g_failed});
-        else l.checks.push_back({"Prepared", "warn", "Not yet: Prepare builds the game from your disc, once"});
+        else l.checks.push_back({"Prepared", "warn", ui_tr("Not yet: Prepare builds the game from your disc, once")});
     }
     std::string missing;
     const bool tools = prepare_tools_present(&missing);
-    if (tools) l.checks.push_back({"Tools", "ok", "A C compiler and python3, to prepare the game"});
-    else if (!g_module.empty()) l.checks.push_back({"Tools", "warn", "Missing (" + missing + "), not needed now"});
-    else l.checks.push_back({"Tools", "fail", "Missing: " + missing + ", needed to prepare the game"});
+    if (tools) l.checks.push_back({"Tools", "ok", ui_tr("A C compiler and python3, to prepare the game")});
+    else if (!g_module.empty()) l.checks.push_back({"Tools", "warn", ui_trf("Missing ({}), not needed now", ui_tr(missing))});
+    else l.checks.push_back({"Tools", "fail", ui_trf("Missing: {}, needed to prepare the game", ui_tr(missing))});
     l.checks.push_back({"Graphics", "ok", env.gl});
-    l.checks.push_back(env.audio ? UiCheck{"Sound", "ok", "Ready"} : UiCheck{"Sound", "warn", "No sound device"});
+    l.checks.push_back(env.audio ? UiCheck{"Sound", "ok", ui_tr("Ready")} : UiCheck{"Sound", "warn", ui_tr("No sound device")});
     int pads = 0;
     std::string pad_name;
     for (int i = 0; i < SDL_NumJoysticks(); i++)
         if (SDL_IsGameController(i) && !pads++) pad_name = SDL_GameControllerNameForIndex(i) ? SDL_GameControllerNameForIndex(i) : "Controller";
     l.checks.push_back(pads ? UiCheck{"Controller", "ok", pad_name}
-                            : UiCheck{"Controller", "warn", "None: the keyboard plays (Settings, Controls)"});
+                            : UiCheck{"Controller", "warn", ui_tr("None: the keyboard plays (Settings, Controls)")});
     size_t saves = 0;
     for (const CardFile& f : card_files(card_path())) saves += f.game == GCN_DISC_ID;
-    l.checks.push_back({"Memory card", "ok", !plat_readable(card_path().c_str()) ? "New, made at the first save"
-                                             : saves == 0 ? "No save yet" : saves == 1 ? "1 save" : std::to_string(saves) + " saves"});
+    l.checks.push_back({"Memory card", "ok", !plat_readable(card_path().c_str()) ? ui_tr("New, made at the first save")
+                                             : saves == 0 ? ui_tr("No save yet") : saves == 1 ? ui_tr("1 save") : ui_trf("{} saves", std::to_string(saves))});
     size_t dds = 0;
     const size_t textures = gx::texture_pack_count(&dds);
-    if (!textures && !dds) l.checks.push_back({"Textures", "ok", "The game's own (no pack in textures/)"});
-    else if (dds) l.checks.push_back({"Textures", "warn", std::to_string(textures) + " in the pack, " + std::to_string(dds) + " DDS skipped (PNG only)"});
-    else l.checks.push_back({"Textures", "ok", std::to_string(textures) + " in the pack" + (cur.textures ? "" : ", turned off in Settings")});
+    if (!textures && !dds) l.checks.push_back({"Textures", "ok", ui_tr("The game's own (no pack in textures/)")});
+    else if (dds) l.checks.push_back({"Textures", "warn", ui_trf("{} in the pack", std::to_string(textures)) + ui_trf(", {} DDS skipped (PNG only)", std::to_string(dds))});
+    else l.checks.push_back({"Textures", "ok", ui_trf("{} in the pack", std::to_string(textures)) + (cur.textures ? "" : ui_tr(", turned off in Settings"))});
     l.can_play = disc_ok && !g_module.empty() && !l.preparing;
     l.can_prepare = disc_ok && g_module.empty() && tools && !l.preparing;
 #ifdef __APPLE__
@@ -195,16 +195,16 @@ void saves_update(const std::string& message) {
 bool saves_act(int action, int index) {
     switch (action) {
     case UI_BACKUP:
-        saves_update(card_backup(card_path(), copies_dir(), kKeepCopies) ? "Copy made."
+        saves_update(ui_tr(card_backup(card_path(), copies_dir(), kKeepCopies) ? "Copy made."
                      : plat_readable(card_path().c_str()) ? "The newest copy is already the same as the card."
-                                                          : "No card yet: it is made at the first save.");
+                                                          : "No card yet: it is made at the first save."));
         return true;
     case UI_RESTORE: {
         const auto copies = card_backups(copies_dir());
         if (index < 0 || index >= (int)copies.size()) return true;
         saves_update(card_restore(copies[index].path, card_path(), copies_dir(), kKeepCopies)
-                         ? "Restored the copy of " + copies[index].when + ". The card as it was is now a copy."
-                         : "Could not restore that copy.");
+                         ? ui_trf("Restored the copy of {}. The card as it was is now a copy.", copies[index].when)
+                         : ui_tr("Could not restore that copy."));
         return true;
     }
     case UI_OPEN_SAVES:
@@ -272,7 +272,7 @@ bool launcher_run(LauncherEnv& env, Settings& cur) {
             g_failed.clear();
             g_l.preparing = true;
             g_l.progress = 0;
-            g_l.progress_text = "Preparing: starting";
+            g_l.progress_text = ui_trf("Preparing: {}", ui_tr("starting"));
             check(env, cur);
             prepare_start(cur.iso);
         } else if (a == UI_INSTALL_TOOLS) {
@@ -293,7 +293,8 @@ bool launcher_run(LauncherEnv& env, Settings& cur) {
                 std::lock_guard<std::mutex> lk(g_prep.m);
                 done = g_prep.done;
                 g_l.progress = g_prep.progress;
-                g_l.progress_text = "Preparing: " + g_prep.step + " (" + std::to_string((int)(g_prep.progress * 100)) + "%)";
+                const std::string step = g_prep.step.compare(0, 10, "compiling ") ? ui_tr(g_prep.step) : ui_trf("compiling {}", g_prep.step.substr(10));
+                g_l.progress_text = ui_trf("Preparing: {}", step) + " (" + std::to_string((int)(g_prep.progress * 100)) + "%)";
             }
             if (done) {
                 g_prep.thread.join();

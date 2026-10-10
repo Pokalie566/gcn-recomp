@@ -33,6 +33,7 @@ bool settings_load(const std::string& path, Settings& s) {
         else if (k == "rumble") r.rumble = to_bool(v);
         else if (k == "mouse_sens") r.mouse_sens = (float)atof(v.c_str());
         else if (k == "volume") r.volume = atoi(v.c_str());
+        else if (k == "lang") r.lang = v;
         else if (k.compare(0, 5, "bind.") == 0) {
             for (int a = 0; a < ACT_COUNT; a++) {
                 if (k.compare(5, std::string::npos, kPadActionNames[a]) != 0) continue;
@@ -62,6 +63,7 @@ bool settings_save(const std::string& path, const Settings& s) {
         << "rumble = " << s.rumble << "\n"
         << "mouse_sens = " << s.mouse_sens << "\n"
         << "volume = " << s.volume << "\n"
+        << "lang = " << s.lang << "\n"
         << "\n# Pad bindings: key:<key>, pad:<button>, axis:+<axis> or axis:-<axis>, comma-separated.\n";
     for (int a = 0; a < ACT_COUNT; a++) {
         out << "bind." << kPadActionNames[a] << " =";

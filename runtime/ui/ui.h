@@ -17,8 +17,16 @@
 #include <vector>
 
 // False, with the reason printed, if the interface cannot start (no ui/ directory): the
-// game then runs without it, Esc still pausing.
-bool ui_init(SDL_Window* win, const std::string& dir);
+// game then runs without it, Esc still pausing. `lang` is the setting: "auto" for the
+// system's language, else "en" or "fr".
+bool ui_init(SDL_Window* win, const std::string& dir, const std::string& lang);
+
+// The interface's language. Its pages are written in English, and ui/lang/<lang>.txt holds
+// `English = translation` lines, which RmlUi applies to every text, the bound ones included,
+// by exact match. ui_tr translates a sentence the program puts together itself; one with a
+// part that varies has {} for it, filled in by ui_trf.
+std::string ui_tr(const std::string& english);
+std::string ui_trf(const std::string& english, const std::string& arg);
 bool ui_ready();
 
 // The pause menu, over the game, showing these settings.

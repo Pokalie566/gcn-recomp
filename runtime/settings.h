@@ -18,6 +18,7 @@ struct Settings {
     bool rumble = true;         // the controller's, when the game runs the pad's motor
     float mouse_sens = 1.0f;
     int volume = 100;           // percent
+    std::string lang = "auto";  // the menus': "auto" (the system's), "en" or "fr"; at the next start
     Bindings bindings = bindings_default();
     bool operator==(const Settings&) const = default;
 };

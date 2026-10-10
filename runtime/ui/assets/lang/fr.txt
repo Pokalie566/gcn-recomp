@@ -1,0 +1,126 @@
+# Français. Une ligne par phrase : `anglais = français`, l'anglais tel que l'écrivent les
+# pages et le programme ({} pour la partie qui varie). Une phrase absente reste en anglais.
+
+# Menu pause
+Paused = Pause
+Resume = Reprendre
+Saves = Sauvegardes
+Settings = Réglages
+Back to the launcher = Retour au lanceur
+Quit = Quitter
+Enter / A = Entrée / A
+Esc / B = Échap / B
+Select = Choisir
+Back = Retour
+Move = Se déplacer
+Change = Changer
+Tab = Onglet
+
+# Réglages
+Graphics = Graphismes
+Controls = Contrôles
+System = Système
+Internal resolution = Résolution interne
+Widescreen = Écran large
+60 FPS = 60 images/s
+an in-between frame for every frame of the game = une image intermédiaire entre deux images du jeu
+Fullscreen = Plein écran
+Texture packs = Packs de textures
+from textures/ = depuis textures/
+Vibration = Vibrations
+when the game rumbles the pad = quand le jeu fait vibrer la manette
+Mouse aim = Visée à la souris
+the mouse as the C stick = la souris comme stick C
+Mouse sensitivity = Sensibilité de la souris
+BUTTONS = BOUTONS
+Reset controls to defaults = Remettre les contrôles par défaut
+Volume = Volume
+Language = Langue
+at the next start = au prochain lancement
+Automatic = Automatique
+Press a key... = Appuie sur une touche…
+Press a button... = Appuie sur un bouton…
+
+# Boutons de la manette GameCube, et ceux d'une manette moderne
+D-pad up = Croix haut
+D-pad down = Croix bas
+D-pad left = Croix gauche
+D-pad right = Croix droite
+L trigger = Gâchette L
+R trigger = Gâchette R
+Stick up = Stick haut
+Stick down = Stick bas
+Stick left = Stick gauche
+Stick right = Stick droite
+C-stick up = Stick C haut
+C-stick down = Stick C bas
+C-stick left = Stick C gauche
+C-stick right = Stick C droite
+Left stick up = Stick gauche haut
+Left stick down = Stick gauche bas
+Left stick left = Stick gauche à gauche
+Left stick right = Stick gauche à droite
+Right stick up = Stick droit haut
+Right stick down = Stick droit bas
+Right stick left = Stick droit à gauche
+Right stick right = Stick droit à droite
+
+# Lanceur
+Recompiled = Recompilé
+Play = Jouer
+Prepare the game = Préparer le jeu
+Install the tools = Installer les outils
+Drop your disc image (.iso or .ciso) on this window = Dépose ton image disque (.iso ou .ciso) sur cette fenêtre
+Disc = Disque
+Game = Jeu
+Prepared = Préparé
+Tools = Outils
+Sound = Son
+Controller = Manette
+Memory card = Carte mémoire
+Textures = Textures
+None yet: drop your disc image on this window = Aucun pour l'instant : dépose ton image disque sur cette fenêtre
+Cannot read {} = Impossible de lire {}
+{}, the version this port is made for = {}, la version pour laquelle ce port est fait
+Ready to play = Prêt à jouer
+Not yet: Prepare builds the game from your disc, once = Pas encore : « Préparer » construit le jeu depuis ton disque, une seule fois
+A C compiler and python3, to prepare the game = Un compilateur C et python3, pour préparer le jeu
+Missing ({}), not needed now = Manquants ({}), inutiles pour l'instant
+Missing: {}, needed to prepare the game = Manquants : {}, nécessaires pour préparer le jeu
+Apple's Command Line Tools = les Command Line Tools d'Apple
+Ready = Prêt
+No sound device = Aucune sortie son
+None: the keyboard plays (Settings, Controls) = Aucune : on joue au clavier (Réglages, Contrôles)
+New, made at the first save = Neuve, créée à la première sauvegarde
+No save yet = Aucune sauvegarde
+1 save = 1 sauvegarde
+{} saves = {} sauvegardes
+The game's own (no pack in textures/) = Celles du jeu (pas de pack dans textures/)
+{} in the pack = {} dans le pack
+, {} DDS skipped (PNG only) = , {} DDS ignorées (PNG seulement)
+, turned off in Settings = , désactivé dans les réglages
+Preparing: {} = Préparation : {}
+starting = démarrage
+checking the disc = vérification du disque
+extracting main.dol = extraction de main.dol
+recompiling = recompilation
+compiling {} = compilation {}
+linking = édition de liens
+ready = prêt
+
+# Sauvegardes
+Make a copy of the card now = Faire une copie de la carte maintenant
+Show the folder = Ouvrir le dossier
+the card, its copies, the settings = la carte, ses copies, les réglages
+ON THE MEMORY CARD = SUR LA CARTE MÉMOIRE
+No save yet. = Aucune sauvegarde pour l'instant.
+COPIES OF THE CARD = COPIES DE LA CARTE
+The game makes a copy each time it starts and keeps the last 10. Restore one from the launcher, with the game stopped. = Le jeu fait une copie à chaque lancement et garde les 10 dernières. On en restaure une depuis le lanceur, jeu arrêté.
+A copy is made each time the game starts; the last 10 are kept. Restoring one first copies the card as it is. = Une copie est faite à chaque lancement du jeu ; les 10 dernières sont gardées. Restaurer en copie d'abord la carte telle qu'elle est.
+Restore = Restaurer
+No copy yet. = Aucune copie pour l'instant.
+Copy made. = Copie faite.
+The newest copy is already the same as the card. = La copie la plus récente est déjà identique à la carte.
+No card yet: it is made at the first save. = Pas encore de carte : elle est créée à la première sauvegarde.
+Restored the copy of {}. The card as it was is now a copy. = Copie du {} restaurée. La carte d'avant est gardée en copie.
+Could not restore that copy. = Impossible de restaurer cette copie.

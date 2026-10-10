@@ -11,6 +11,8 @@
 #include <cstdlib>
 #include <cstring>
 #include <ctime>
+#include <fstream>
+#include <unordered_map>
 #include <vector>
 
 bool write_png(const char* path, const uint8_t* rgba, int w, int h);
@@ -37,11 +39,26 @@ const char* const kActionLabels[ACT_COUNT] = {
     "C-stick up", "C-stick down", "C-stick left", "C-stick right",
 };
 
+std::unordered_map<std::string, std::string> g_strings;   // English -> the language's
+
 // RmlUi takes a path that starts with / as relative to the document's directory; the banner
-// is in the save directory, an absolute path, which this lets through as it is.
+// is in the save directory, an absolute path, which this lets through as it is. And every
+// text goes through the language's strings, its surrounding spaces kept.
 class System : public SystemInterface_SDL {
 public:
     using SystemInterface_SDL::SystemInterface_SDL;
+    int TranslateString(Rml::String& out, const Rml::String& in) override {
+        const size_t a = in.find_first_not_of(" \t\r\n"), b = in.find_last_not_of(" \t\r\n");
+        if (a != std::string::npos) {
+            auto it = g_strings.find(in.substr(a, b - a + 1));
+            if (it != g_strings.end()) {
+                out = in.substr(0, a) + it->second + in.substr(b + 1);
+                return 1;
+            }
+        }
+        out = in;
+        return 0;
+    }
     void JoinPath(Rml::String& out, const Rml::String& document, const Rml::String& path) override {
         if (!path.empty() && (path[0] == '/' || (path.size() > 2 && path[1] == ':'))) out = path;
         else SystemInterface_SDL::JoinPath(out, document, path);
@@ -85,7 +102,8 @@ void rows_update() {
         g_rows[a].key = binding_label(g_s.bindings.inputs[a], false);
         g_rows[a].pad = binding_label(g_s.bindings.inputs[a], true);
     }
-    if (g_capture >= 0) (g_capture_pad ? g_rows[g_capture].pad : g_rows[g_capture].key) = g_capture_pad ? "Press a button..." : "Press a key...";
+    if (g_capture >= 0)
+        (g_capture_pad ? g_rows[g_capture].pad : g_rows[g_capture].key) = ui_tr(g_capture_pad ? "Press a button..." : "Press a key...");
     g_model.DirtyVariable("binds");
 }
 
@@ -122,8 +140,24 @@ bool capture_event(const SDL_Event& e) {
     return e.type != SDL_QUIT && e.type != SDL_WINDOWEVENT;
 }
 
+Rml::String g_lang_label;
+const char* const kLangs[][2] = {{"auto", "Automatic"}, {"en", "English"}, {"fr", "Français"}};
+
+void lang_label_update() {
+    g_lang_label = g_s.lang;
+    for (const auto& l : kLangs)
+        if (g_s.lang == l[0]) g_lang_label = ui_tr(l[1]);
+    g_model.DirtyVariable("lang_label");
+}
+
 // Left and right on a row that holds a value: one step down or up.
 void nudge(const Rml::String& var, int dir) {
+    if (var == "lang") {
+        int i = 0;
+        while (i < 3 && g_s.lang != kLangs[i][0]) i++;
+        g_s.lang = kLangs[((i % 3) + dir + 3) % 3][0];
+        lang_label_update();
+    }
     if (var == "scale") g_s.scale = std::clamp(g_s.scale + dir, 1, 4);
     else if (var == "volume") g_s.volume = std::clamp(g_s.volume + 5 * dir, 0, 100);
     else if (var == "mouse_sens") g_s.mouse_sens = std::clamp(std::round((g_s.mouse_sens + 0.25f * dir) * 4) / 4, 0.25f, 4.0f);
@@ -212,13 +246,51 @@ Rml::String card_time(uint32_t t) {
     return buf;
 }
 
+
+// The language to show: the setting, or for "auto" the first of the system's that has strings.
+std::string pick_language(const std::string& setting, const std::string& dir) {
+    if (setting != "auto") return setting;
+    if (SDL_Locale* locales = SDL_GetPreferredLocales()) {
+        std::string found = "en";
+        for (SDL_Locale* l = locales; l->language; l++)
+            if (!strcmp(l->language, "en") || plat_readable((dir + "/lang/" + l->language + ".txt").c_str())) {
+                found = l->language;
+                break;
+            }
+        SDL_free(locales);
+        return found;
+    }
+    return "en";
+}
+
+void load_strings(const std::string& path) {
+    std::ifstream in(path);
+    for (std::string line; std::getline(in, line);) {
+        const size_t eq = line.find(" = ");
+        if (line.empty() || line[0] == '#' || eq == std::string::npos) continue;
+        g_strings[line.substr(0, eq)] = line.substr(eq + 3);
+    }
+}
+
 }  // namespace
 
-bool ui_init(SDL_Window* win, const std::string& dir) {
+std::string ui_tr(const std::string& english) {
+    auto it = g_strings.find(english);
+    return it == g_strings.end() ? english : it->second;
+}
+
+std::string ui_trf(const std::string& english, const std::string& arg) {
+    std::string s = ui_tr(english);
+    if (const size_t at = s.find("{}"); at != std::string::npos) s.replace(at, 2, arg);
+    return s;
+}
+
+bool ui_init(SDL_Window* win, const std::string& dir, const std::string& lang) {
     if (!plat_readable((dir + "/pause.rml").c_str())) {
         fprintf(stderr, "ui: no interface in %s, so none\n", dir.c_str());
         return false;
     }
+    if (const std::string l = pick_language(lang, dir); l != "en") load_strings(dir + "/lang/" + l + ".txt");
     g_win = win;
     g_system = new System(win);
     g_render = new RenderInterface_GL3();
@@ -269,6 +341,7 @@ bool ui_init(SDL_Window* win, const std::string& dir) {
     m.Bind("rumble", &g_s.rumble);
     m.Bind("mouse_sens", &g_s.mouse_sens);
     m.Bind("volume", &g_s.volume);
+    m.Bind("lang_label", &g_lang_label);
     m.Bind("binds", &g_rows);
     m.Bind("game_title", &g_l.title);
     m.Bind("description", &g_l.description);
@@ -350,6 +423,7 @@ void ui_set_settings(const Settings& s) {
     if (!g_ctx) return;
     g_s = s;
     rows_update();
+    lang_label_update();
     g_model.DirtyAllVariables();
 }
 
@@ -392,7 +466,7 @@ void ui_set_saves(const UiSaves& s) {
     for (const CardBackup& b : s.backups) {
         size_t n = 0;
         for (const CardFile& f : card_files(b.path)) n += f.game == GCN_DISC_ID;
-        g_backup_rows.push_back({b.when, n == 1 ? "1 save" : std::to_string(n) + " saves"});
+        g_backup_rows.push_back({b.when, n == 1 ? ui_tr("1 save") : ui_trf("{} saves", std::to_string(n))});
     }
     g_saves_message = s.message;
     g_model.DirtyAllVariables();

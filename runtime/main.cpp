@@ -479,13 +479,13 @@ int main(int argc, char** argv) {
     apply_settings(win, cur, nullptr);
     // The menus' documents: beside the executable, or in an app's resources.
     const char* res = getenv("GCN_RESOURCES");
-    ui_init(win, res ? std::string(res) + "/ui" : plat_executable_dir() + "/ui");
+    ui_init(win, res ? std::string(res) + "/ui" : plat_executable_dir() + "/ui", cur.lang);
     // A change the player made: applied, and saved over settings.ini's.
     auto commit = [&](const Settings& s) {
         auto take = [&](auto m) { if (s.*m != cur.*m) g_saved.*m = s.*m; };
         take(&Settings::iso), take(&Settings::scale), take(&Settings::widescreen), take(&Settings::interpolate);
         take(&Settings::fullscreen), take(&Settings::textures), take(&Settings::mouse_aim), take(&Settings::rumble);
-        take(&Settings::mouse_sens), take(&Settings::volume), take(&Settings::bindings);
+        take(&Settings::mouse_sens), take(&Settings::volume), take(&Settings::bindings), take(&Settings::lang);
         settings_save(settings_path, g_saved);
         apply_settings(win, s, &cur);
         cur = s;
