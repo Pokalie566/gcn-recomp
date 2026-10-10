@@ -1,0 +1,31 @@
+diff --git a/lib/gx/shader.cpp b/lib/gx/shader.cpp
+index adb2150..2256402 100644
+--- a/lib/gx/shader.cpp
++++ b/lib/gx/shader.cpp
+@@ -1249,6 +1249,10 @@ std::string build_shader_source(const ShaderConfig& config, DstAlphaMode dstAlph
+       vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 1.0);", i, vtx_attr(config, GX_VA_POS));
+     } else if (tcg.src == GX_TG_NRM) {
+       vtxXfrAttrs += fmt::format("\n    var tc{} = vec4f({}, 1.0);", i, vtx_attr(config, GX_VA_NRM));
++    } else if ((tcg.src == GX_TG_COLOR0 || tcg.src == GX_TG_COLOR1) && tcg.type == GX_TG_SRTG && !UsePerPixelLighting) {
++      // GX_TG_SRTG takes the channel's color after lighting, not the vertex's color attribute:
++      // geometry with no color attribute at all (a light cone shaded by a spot light) relies on it.
++      vtxXfrAttrs += fmt::format("\n    var tc{} = out.cc{};", i, tcg.src == GX_TG_COLOR1 ? 1 : 0);
+     } else if (tcg.src == GX_TG_COLOR0) {
+       vtxXfrAttrs += fmt::format("\n    var tc{} = {};", i, vtx_attr(config, GX_VA_CLR0));
+     } else if (tcg.src == GX_TG_COLOR1) {
+diff --git a/lib/gx/shader_info.cpp b/lib/gx/shader_info.cpp
+index c74bd6d..16a79d6 100644
+--- a/lib/gx/shader_info.cpp
++++ b/lib/gx/shader_info.cpp
+@@ -305,6 +305,11 @@ ShaderInfo build_shader_info(const ShaderConfig& config) noexcept {
+       info.sampledTexCoords.set(tcg.embossSrc);
+       info.lightingEnabled = true;
+     }
++    // A color texgen reads its channel's lit color, so the channel is computed even when no TEV
++    // stage rasterizes it.
++    if (tcg.type == GX_TG_SRTG) {
++      info.sampledColorChannels.set(tcg.src == GX_TG_COLOR1 ? 1 : 0);
++    }
+   }
+ 
+   info.uniformSize += info.loadsTevReg.count() * sizeof(Vec4<float>);

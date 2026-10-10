@@ -18,6 +18,7 @@ option(GCN_BENCH_ONLY "Build only the headless benchmark (no SDL2, no renderer)"
 # "which guest function did that?" and gives a crash dump something to print.
 option(GCN_TRACE_CALLS "Maintain a guest call stack (diagnostics)" OFF)
 option(GCN_APP "Build the game as an app to hand out: no disc, no game code, everything it needs inside (a .app on macOS)" OFF)
+option(GCN_AURORA "Also build <game>_aurora: the game drawn by Aurora (WebGPU), gx/aurora_bridge.cpp" OFF)
 option(GCN_GUEST_CHECKS "Call the game project's consistency checks at every poll, DMA and frame (diagnostics)" OFF)
 
 # gcn_add_game(
@@ -166,7 +167,8 @@ function(gcn_add_game)
 
   # Alternative entry points and the SDL-free audio stub: none of these may land in a
   # target that already has main.cpp or audio.cpp.
-  list(REMOVE_ITEM RUNTIME_SOURCES ${RT}/bench_main.cpp ${RT}/audio_stub.cpp)
+  list(REMOVE_ITEM RUNTIME_SOURCES ${RT}/bench_main.cpp ${RT}/audio_stub.cpp
+    ${RT}/aurora_frontend.cpp ${RT}/gx/aurora_bridge.cpp)
 
   # Everything below the renderer and the SDL frontend -- the CPU, OS, hardware and GX
   # front end, including the batch queue in gx/xf.cpp -- is free of both GL and SDL.
@@ -479,6 +481,41 @@ function(gcn_add_game)
           COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_LINKER_FILE:${G_NAME}> ${_res}/lib/${G_NAME}.lib
           VERBATIM)
       endif()
+    endif()
+  endif()
+
+  # ---- The game drawn by Aurora (GCN_AURORA) ----
+  # Aurora (github.com/encounter/aurora, MIT): its GX command processor and WebGPU renderer
+  # (Dawn, prebuilt), its window and SDL3. Only the modules the bridge uses are built: the
+  # game's own SDK runs recompiled, so Aurora's DVD, CARD, THP and the rest are not wanted.
+  # The guest and the hardware are CORE_SOURCES, without the OpenGL front end, which
+  # gx/aurora_bridge.cpp replaces.
+  if(GCN_AURORA AND NOT GCN_BENCH_ONLY)
+    include(FetchContent)
+    set(AURORA_ENABLE_DVD OFF CACHE BOOL "" FORCE)
+    set(AURORA_ENABLE_CARD OFF CACHE BOOL "" FORCE)
+    set(AURORA_ENABLE_THP OFF CACHE BOOL "" FORCE)
+    set(AURORA_ENABLE_EXAMPLES OFF CACHE BOOL "" FORCE)
+    set(AURORA_ENABLE_TESTS OFF CACHE BOOL "" FORCE)
+    FetchContent_Declare(aurora
+      GIT_REPOSITORY https://github.com/encounter/aurora.git
+      GIT_TAG 40cf48fce6ce85366608596bae018c6188f2b2e7   # 2026-10-09
+      # Fixes not yet upstream, one patch each (patches/aurora-*.patch).
+      PATCH_COMMAND git apply --ignore-whitespace ${GCN_RECOMP_DIR}/patches/aurora-srtg-lit-color.patch
+      EXCLUDE_FROM_ALL)
+    FetchContent_MakeAvailable(aurora)
+    set(AURORA_SOURCES ${CORE_SOURCES} ${RT}/aurora_frontend.cpp ${RT}/gx/aurora_bridge.cpp ${RT}/png.cpp)
+    list(REMOVE_ITEM AURORA_SOURCES ${RT}/gx/cmd.cpp ${RT}/gx/xf.cpp ${RT}/gx/texture.cpp
+      ${RT}/gx/texture_pack.cpp ${RT}/gx/interp.cpp)
+    add_executable(${G_NAME}_aurora ${AURORA_SOURCES} ${G_SOURCES})
+    _gcn_set_standards(${G_NAME}_aurora)
+    target_include_directories(${G_NAME}_aurora PRIVATE ${RT} ${aurora_SOURCE_DIR}/lib)
+    target_link_libraries(${G_NAME}_aurora PRIVATE aurora::gx aurora::vi gcn_nod ${CMAKE_DL_LIBS})
+    target_compile_options(${G_NAME}_aurora PRIVATE ${GCN_RUNTIME_WARNINGS})
+    target_compile_definitions(${G_NAME}_aurora PRIVATE ${GCN_GAME_DEFS})
+    set_target_properties(${G_NAME}_aurora PROPERTIES ENABLE_EXPORTS ON)
+    if(WIN32)
+      target_link_libraries(${G_NAME}_aurora PRIVATE dbghelp)
     endif()
   endif()
 
