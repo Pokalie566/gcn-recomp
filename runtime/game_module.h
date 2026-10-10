@@ -38,8 +38,12 @@ bool game_module_load(const std::string& path, std::string* err);
 std::string game_module_find(const std::string& prepared);
 
 // ---- Building one ----
-// With the machine's own compiler: cc on macOS and Linux, Visual Studio's C++ tools on
-// Windows (found with vswhere). False, with what is missing, if they are not there.
+// With the app's own toolchain (tools/fetch_toolchain.sh): zig, in <resources>/toolchain or
+// where GCN_TOOLCHAIN says, so the player needs nothing installed. A development build
+// without one uses the machine's compiler: cc on macOS and Linux, Visual Studio's C++ tools
+// on Windows (found with vswhere).
+std::string toolchain_dir();   // empty without one
+// False, with what is missing, if there is no compiler at all.
 bool game_module_compiler_present(std::string* missing);
 
 // Compiles `sources` and links them as the module `out`, the way a game module must be

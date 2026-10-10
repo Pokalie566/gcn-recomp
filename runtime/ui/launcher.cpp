@@ -145,11 +145,6 @@ void check(const LauncherEnv& env, const Settings& cur) {
         else if (!g_failed.empty()) l.checks.push_back({"Prepared", "fail", g_failed});
         else l.checks.push_back({"Prepared", "warn", ui_tr("Not yet: Prepare builds the game from your disc, once")});
     }
-    std::string missing;
-    const bool tools = prepare_tools_present(&missing);
-    if (tools) l.checks.push_back({"Tools", "ok", ui_tr("A C compiler and python3, to prepare the game")});
-    else if (!g_module.empty()) l.checks.push_back({"Tools", "warn", ui_trf("Missing ({}), not needed now", ui_tr(missing))});
-    else l.checks.push_back({"Tools", "fail", ui_trf("Missing: {}, needed to prepare the game", ui_tr(missing))});
     l.checks.push_back({"Graphics", "ok", env.gl});
     l.checks.push_back(env.audio ? UiCheck{"Sound", "ok", ui_tr("Ready")} : UiCheck{"Sound", "warn", ui_tr("No sound device")});
     int pads = 0;
@@ -172,10 +167,7 @@ void check(const LauncherEnv& env, const Settings& cur) {
     const UiCheck* game = l.checks.size() > 1 && l.checks[1].label == "Game" ? &l.checks[1] : nullptr;
     ui_set_disc(l.no_disc && cur.iso.empty() ? ui_tr("No disc yet") : cur.iso.substr(cur.iso.find_last_of("/\\") + 1),
                 game ? game->state : disc.state, game ? game->detail : disc.detail);
-    l.can_prepare = disc_ok && g_module.empty() && tools && !l.preparing;
-#ifdef __APPLE__
-    l.can_install_tools = !tools && g_module.empty();
-#endif
+    l.can_prepare = disc_ok && g_module.empty() && !l.preparing;
     g_l = l;
     ui_set_launcher(g_l);
 }
@@ -334,8 +326,6 @@ bool launcher_run(LauncherEnv& env, Settings& cur) {
             plat_open_folder(gx::texture_pack_dir());
         } else if (a == UI_SETUP_AGAIN) {
             ui_show_setup(cur, g_l);
-        } else if (a == UI_INSTALL_TOOLS) {
-            plat_run({"xcode-select", "--install"}, kPlatNull);
         } else if (saves_act(a, index)) {
             if (a == UI_RESTORE && !g_l.preparing) check(env, cur);
         }

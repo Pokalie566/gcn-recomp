@@ -28,9 +28,24 @@ PrepareSources prepare_sources() {
     return {GCN_RES_RECOMP, GCN_RES_TABLES, GCN_RES_SYMBOLS, GCN_RES_INCLUDE, GCN_RES_IMPORT_LIB};
 }
 
-// How python 3 is started: `python3` on macOS and Linux; on Windows the py launcher that
-// python.org's installer puts in, else `python`.
+// How python 3 is started: the app's own (tools/fetch_toolchain.sh), isolated from whatever
+// the machine's environment says. A development build without one uses the machine's:
+// `python3` on macOS and Linux; on Windows the py launcher python.org's installer puts in,
+// else `python`.
 static std::vector<std::string> python() {
+    if (const std::string t = toolchain_dir(); !t.empty()) {
+#if defined(_WIN32)
+        const std::vector<std::string> paths = {t + "/python/python.exe"};
+#elif defined(__APPLE__) && defined(__aarch64__)
+        const std::vector<std::string> paths = {t + "/python-arm64/bin/python3", t + "/python/bin/python3"};
+#elif defined(__APPLE__)
+        const std::vector<std::string> paths = {t + "/python-x86_64/bin/python3", t + "/python/bin/python3"};
+#else
+        const std::vector<std::string> paths = {t + "/python/bin/python3"};
+#endif
+        for (const auto& p : paths)
+            if (plat_readable(p.c_str())) return {p, "-I"};
+    }
 #ifdef _WIN32
     if (plat_run({"py", "-3", "--version"}, kPlatNull) == 0) return {"py", "-3"};
     return {"python"};
@@ -116,14 +131,6 @@ std::string prepare_module_path(const std::string& dol_sha1) {
 
 bool prepare_tools_present(std::string* missing) {
     missing->clear();
-#ifdef __APPLE__
-    // Without the Command Line Tools, cc and python3 are stubs that put up Apple's installer
-    // when run; asking xcode-select first keeps a check from doing that by itself.
-    if (plat_run({"xcode-select", "-p"}, kPlatNull) != 0) {
-        *missing = "Apple's Command Line Tools";
-        return false;
-    }
-#endif
     std::string compiler;
     if (!game_module_compiler_present(&compiler)) *missing = compiler;
     std::vector<std::string> py = python();
@@ -142,14 +149,8 @@ bool prepare_game(const char* iso, std::string* module, std::string* disc_copy, 
     if (!prepare_check_disc(iso, &sha1, err)) return false;
     std::string missing;
     if (!prepare_tools_present(&missing)) {
-        *err = "missing tools: " + missing +
-#if defined(__APPLE__)
-               " -- install Apple's Command Line Tools: xcode-select --install";
-#elif defined(_WIN32)
-               " -- install Visual Studio's C++ build tools and Python 3 (python.org)";
-#else
-               " -- install a C compiler and python3";
-#endif
+        *err = "missing tools: " + missing + " -- the app carries its own (resources/toolchain); a development build "
+               "uses the system's, or GCN_TOOLCHAIN";
         return false;
     }
 

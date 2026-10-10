@@ -9,9 +9,9 @@
 //   5. keep a copy of the disc (disc.h), so that the player's image is no longer needed.
 //
 // What it needs ships with the app (prepare_sources): the recompiler, the tables, the symbol
-// table, the runtime headers the generated code includes. What it needs from the machine is
-// a C compiler and python3 -- on macOS, Apple's Command Line Tools; on Windows, Visual
-// Studio's C++ build tools and Python 3.
+// table, the runtime headers the generated code includes -- and the toolchain that runs them,
+// zig and Python (game_module.h, toolchain_dir), so that the machine needs nothing. A
+// development build without it uses the machine's C compiler and python3.
 //
 // The result lives in game/<dol sha1>-<inputs>/ under save_path, the second half a hash of everything
 // that went into it, so that an app update that changes the tables prepares again.
@@ -42,7 +42,7 @@ bool prepare_check_disc(const char* iso, std::string* dol_sha1, std::string* err
 // Where the module prepared from a main.dol of this SHA-1 is, ready or not.
 std::string prepare_module_path(const std::string& dol_sha1);
 
-// Whether the tools are there: a C compiler and python3. `missing` says which are not.
+// Whether the tools are there: a C compiler and Python. `missing` says which are not.
 bool prepare_tools_present(std::string* missing);
 
 // Where preparing keeps its copy of the disc (disc_copy_ciso): the image to play from then on.

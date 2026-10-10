@@ -27,14 +27,13 @@
 
 		<div class="step" data-class-shown="setup_step == 2">
 			<h1>Preparing the game</h1>
-			<p class="line">The game is built from your disc, with this computer's own tools. It takes a minute or two, and is done once.</p>
-			<div class="check" data-for="c : checks" data-if="c.label == 'Prepared' || c.label == 'Tools'">
+			<p class="line">The game is built from your disc, on this computer, with nothing to install. It takes a minute or two, and is done once.</p>
+			<div class="check" data-for="c : checks" data-if="c.label == 'Prepared'">
 				<span class="dot" data-class-ok="c.state == 'ok'" data-class-warn="c.state == 'warn'" data-class-fail="c.state == 'fail'" data-class-busy="c.state == 'busy'"/>
 				<span class="clabel">{{c.label}}</span>
 				<span class="cdetail">{{c.detail}}</span>
 			</div>
 			<button class="row" data-if="can_prepare" data-event-click="prepare"><span>Prepare the game</span></button>
-			<button class="row" data-if="can_install_tools" data-event-click="install_tools"><span>Install the tools</span></button>
 			<div class="track wide" data-if="preparing"><div class="fill" data-style-width="progress_width"/></div>
 		</div>
 

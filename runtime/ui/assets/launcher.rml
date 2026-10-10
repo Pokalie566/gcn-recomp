@@ -23,7 +23,6 @@
 	<div class="actions menu">
 		<button class="primary" autofocus="autofocus" data-class-disabled="!can_play" data-event-click="play">Play</button>
 		<button data-if="can_prepare" data-event-click="prepare">Prepare the game</button>
-		<button data-if="can_install_tools" data-event-click="install_tools">Install the tools</button>
 		<button data-event-click="saves">Saves</button>
 		<button data-event-click="settings">Settings</button>
 		<button data-event-click="quit">Quit</button>

@@ -56,11 +56,36 @@ std::string game_module_find(const std::string& prepared) {
 
 // ---- Building one ----
 
+std::string toolchain_dir() {
+    if (const char* t = getenv("GCN_TOOLCHAIN")) return t;
+    if (const char* r = getenv("GCN_RESOURCES")) return std::string(r) + "/toolchain";
+    return {};
+}
+
+// The toolchain's zig, which compiles C for this machine with nothing installed: empty
+// without one (a development build), and the system's compiler is used instead.
+static std::vector<std::string> zig_cc() {
+    const std::string dir = toolchain_dir();
+#ifdef _WIN32
+    const std::string zig = dir + "/zig/zig.exe";
+#else
+    const std::string zig = dir + "/zig/zig";
+#endif
+    if (dir.empty() || !plat_readable(zig.c_str())) return {};
+    return {zig, "cc"};
+}
+
+#ifdef _WIN32
+// Visual Studio's C++ tools, with no toolchain: the module then shares the executable's
+// MSVC C runtime exactly (setjmp/longjmp go across the two, recomp.h).
+static bool use_msvc() { return zig_cc().empty(); }
+#endif
+
 std::vector<std::string> game_module_cflags() {
 #ifdef _WIN32
-    // As game_recomp is built with MSVC (gcn-recomp CMakeLists), and the C runtime the
-    // executable uses, which setjmp/longjmp across the two must share.
-    std::vector<std::string> f = {"/O2", "/fp:precise", "/fp:except-", "/bigobj", "/MD", "/w", "/DGCN_MODULE_DLL"};
+    std::vector<std::string> f = use_msvc()
+        ? std::vector<std::string>{"/O2", "/fp:precise", "/fp:except-", "/bigobj", "/MD", "/w", "/DGCN_MODULE_DLL"}
+        : std::vector<std::string>{"-std=gnu11", "-O2", "-fno-strict-aliasing", "-ffp-contract=off", "-w", "-DGCN_MODULE_DLL"};
 #else
     std::vector<std::string> f = {"-std=gnu11", "-O2", "-fPIC", "-fno-strict-aliasing", "-ffp-contract=off", "-w"};
 #endif
@@ -89,15 +114,10 @@ static std::string vcvars() {
     return dir.empty() || !plat_readable(bat.c_str()) ? std::string() : bat;
 }
 
-bool game_module_compiler_present(std::string* missing) {
-    if (!vcvars().empty()) return true;
-    *missing = "Visual Studio's C++ build tools";
-    return false;
-}
 
 // One script that sets up Visual Studio's tools, compiles every file (cl /MP, a compiler per
 // core) and links: the environment script is slow, so it runs once.
-bool game_module_build(const std::vector<std::string>& sources, const std::vector<std::string>& includes,
+static bool build_msvc(const std::vector<std::string>& sources, const std::vector<std::string>& includes,
                        const std::string& out, const std::string& import_lib, const std::string& log,
                        std::string* err, const std::function<void(size_t, size_t)>& progress) {
     const std::string bat_env = vcvars();
@@ -135,17 +155,40 @@ bool game_module_build(const std::vector<std::string>& sources, const std::vecto
     fs::remove_all(dir, ec);
     return true;
 }
-#else
+#endif
+
 bool game_module_compiler_present(std::string* missing) {
+    if (!zig_cc().empty()) return true;
+#ifdef _WIN32
+    if (!vcvars().empty()) return true;
+    *missing = "Visual Studio's C++ build tools";
+#else
     if (plat_run({"cc", "--version"}, kPlatNull) == 0) return true;
     *missing = "cc";
+#endif
     return false;
 }
 
 bool game_module_build(const std::vector<std::string>& sources, const std::vector<std::string>& includes,
                        const std::string& out, const std::string& import_lib, const std::string& log,
                        std::string* err, const std::function<void(size_t, size_t)>& progress) {
-    (void)import_lib;   // the executable's symbols are looked up as the module loads
+#ifdef _WIN32
+    if (use_msvc()) return build_msvc(sources, includes, out, import_lib, log, err, progress);
+#endif
+    std::vector<std::string> cc = zig_cc();
+    if (cc.empty()) cc = {"cc"};
+    else if (!getenv("ZIG_GLOBAL_CACHE_DIR")) {
+        // zig's cache (the libc pieces it builds once) beside the prepared games, in the
+        // player's data folder: <data>/game/zig-cache for <data>/game/<hash>.work/<module>.
+        const std::string cache = (std::filesystem::path(out).parent_path().parent_path() / "zig-cache").string();
+#ifdef _WIN32
+        _putenv_s("ZIG_GLOBAL_CACHE_DIR", cache.c_str());
+        _putenv_s("ZIG_LOCAL_CACHE_DIR", cache.c_str());
+#else
+        setenv("ZIG_GLOBAL_CACHE_DIR", cache.c_str(), 1);
+        setenv("ZIG_LOCAL_CACHE_DIR", cache.c_str(), 1);
+#endif
+    }
     // Compiled in parallel, one compiler per core.
     std::atomic<size_t> next{0}, done{0};
     std::atomic<bool> failed{false};
@@ -153,7 +196,7 @@ bool game_module_build(const std::vector<std::string>& sources, const std::vecto
     const std::vector<std::string> flags = game_module_cflags();
     auto worker = [&] {
         for (size_t i; !failed && (i = next++) < sources.size();) {
-            std::vector<std::string> argv = {"cc"};
+            std::vector<std::string> argv = cc;
             argv.insert(argv.end(), flags.begin(), flags.end());
             for (const auto& inc : includes) argv.push_back("-I" + inc);
             argv.insert(argv.end(), {"-c", sources[i], "-o", sources[i] + ".o"});
@@ -167,15 +210,20 @@ bool game_module_build(const std::vector<std::string>& sources, const std::vecto
     for (unsigned i = 0; i < std::max(1u, std::thread::hardware_concurrency()); i++) pool.emplace_back(worker);
     for (auto& t : pool) t.join();
     if (failed) { *err = "compiling the game failed; see " + log; return false; }
-    std::vector<std::string> link = {"cc",
-#ifdef __APPLE__
-                                     "-dynamiclib", "-undefined", "dynamic_lookup",
+    std::vector<std::string> link = cc;
+#if defined(__APPLE__)
+    // The runtime's symbols are looked up in the executable as the module loads.
+    link.insert(link.end(), {"-dynamiclib", "-undefined", "dynamic_lookup"});
 #else
-                                     "-shared",
+    link.push_back("-shared");
 #endif
-                                     "-o", out};
+    link.insert(link.end(), {"-o", out});
     for (const auto& s : sources) link.push_back(s + ".o");
+#ifdef _WIN32
+    link.push_back(import_lib);   // the runtime's symbols, from the executable
+#else
+    (void)import_lib;
+#endif
     if (plat_run(link, log.c_str()) != 0) { *err = "linking the game failed; see " + log; return false; }
     return true;
 }
-#endif

@@ -50,7 +50,7 @@ struct UiLauncher {
     std::vector<UiCheck> checks;
     bool no_disc = true;       // the hint to drop one on the window shows
     bool disc_ok = false;      // the disc is the game, in the version this port is for
-    bool can_play = false, can_prepare = false, can_install_tools = false;
+    bool can_play = false, can_prepare = false;
     bool preparing = false;
     float progress = 0;        // 0..1
     std::string progress_text;
@@ -88,7 +88,7 @@ void ui_render(int w, int h);
 
 enum UiAction {
     UI_NONE, UI_RESUME, UI_QUIT,
-    UI_PLAY, UI_PREPARE, UI_INSTALL_TOOLS,   // the launcher's
+    UI_PLAY, UI_PREPARE,   // the launcher's
     UI_LAUNCHER,                             // the pause menu's: back to the launcher
     UI_BACKUP, UI_RESTORE, UI_OPEN_SAVES,    // the saves page's; UI_RESTORE with ui_action_index
     UI_PICK_DISC, UI_PREPARE_AGAIN,          // the Disc settings page's

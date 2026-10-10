@@ -413,7 +413,6 @@ bool ui_init(SDL_Window* win, const std::string& dir, const std::string& lang) {
     m.Bind("no_disc", &g_l.no_disc);
     m.Bind("can_play", &g_l.can_play);
     m.Bind("can_prepare", &g_l.can_prepare);
-    m.Bind("can_install_tools", &g_l.can_install_tools);
     m.Bind("preparing", &g_l.preparing);
     m.Bind("progress_width", &g_progress_width);
     m.Bind("progress_text", &g_l.progress_text);
@@ -451,7 +450,6 @@ bool ui_init(SDL_Window* win, const std::string& dir, const std::string& lang) {
     m.BindEventCallback("quit", [](H, Rml::Event&, Args) { act(UI_QUIT); });
     m.BindEventCallback("play", [](H, Rml::Event&, Args) { if (g_l.can_play) act(UI_PLAY); });
     m.BindEventCallback("prepare", [](H, Rml::Event&, Args) { if (g_l.can_prepare) act(UI_PREPARE); });
-    m.BindEventCallback("install_tools", [](H, Rml::Event&, Args) { act(UI_INSTALL_TOOLS); });
     m.BindEventCallback("launcher", [](H, Rml::Event&, Args) { act(UI_LAUNCHER); });
     m.BindEventCallback("backup", [](H, Rml::Event&, Args) { act(UI_BACKUP); });
     m.BindEventCallback("restore", [](H, Rml::Event&, Args a) { if (!g_in_game && !a.empty()) act(UI_RESTORE, a[0].Get<int>()); });
