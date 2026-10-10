@@ -7,6 +7,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <map>
 #ifdef _WIN32
 #define strcasecmp _stricmp
 #else
@@ -109,6 +110,15 @@ namespace {
 bool g_init;
 bool g_dump;
 bool g_enabled = true;
+std::vector<std::string> g_off;   // packs turned off: folders directly in the game's
+fs::path g_pack_dir;              // textures/<game id>, or textures/<its first three letters>
+
+// The pack folder a file belongs to: the first folder under the game's, or "" for a file
+// right in it.
+std::string pack_of(const fs::path& file) {
+    const fs::path rel = file.lexically_relative(g_pack_dir);
+    return std::distance(rel.begin(), rel.end()) > 1 ? rel.begin()->string() : std::string();
+}
 std::string g_dump_dir;
 std::unordered_map<std::string, std::string> g_index;   // name -> file
 std::unordered_set<std::string> g_dumped;
@@ -129,6 +139,8 @@ void init() {
     std::error_code ec;
     fs::path dir = root / GCN_DISC_ID;
     if (!fs::is_directory(dir, ec)) dir = root / std::string(GCN_DISC_ID).substr(0, 3);
+    if (!fs::is_directory(dir, ec)) dir = root / GCN_DISC_ID;
+    g_pack_dir = dir;
     if (!fs::is_directory(dir, ec)) return;
     size_t dds = 0, dupes = 0;
     auto is_png = [](const std::string& p) { return p.size() > 4 && strcasecmp(p.c_str() + p.size() - 4, ".png") == 0; };
@@ -139,6 +151,7 @@ void init() {
         std::string name = it->path().stem().string();
         if (name.compare(0, 5, "tex1_") != 0) continue;
         if (ext != ".png" && ext != ".dds") continue;
+        if (std::find(g_off.begin(), g_off.end(), pack_of(it->path())) != g_off.end()) continue;
         dds += ext == ".dds";
         // "_arb": mipmaps the pack drew itself; generated ones stand in for them.
         if (const size_t arb = name.rfind("_arb"); arb != std::string::npos) name.erase(arb, 4);
@@ -187,6 +200,34 @@ void texture_pack_set_enabled(bool on) { g_enabled = on; }
 void texture_pack_reset() {
     g_init = false;
     g_index.clear();
+}
+
+void texture_pack_set_off(const std::vector<std::string>& packs) {
+    if (packs == g_off) return;
+    g_off = packs;
+    texture_pack_reset();
+}
+
+std::string texture_pack_dir() {
+    init();
+    return g_pack_dir.string();
+}
+
+std::vector<TexturePack> texture_pack_list() {
+    init();
+    std::map<std::string, size_t> count;
+    std::error_code ec;
+    for (auto it = fs::recursive_directory_iterator(g_pack_dir, ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
+        if (!it->is_regular_file(ec)) continue;
+        const std::string name = it->path().filename().string();
+        std::string ext = it->path().extension().string();
+        std::transform(ext.begin(), ext.end(), ext.begin(), [](unsigned char c) { return (char)tolower(c); });
+        if (name.compare(0, 5, "tex1_") == 0 && (ext == ".png" || ext == ".dds")) count[pack_of(it->path())]++;
+    }
+    std::vector<TexturePack> out;
+    for (const auto& [pack, n] : count)
+        out.push_back({pack, n, std::find(g_off.begin(), g_off.end(), pack) == g_off.end()});
+    return out;
 }
 
 size_t texture_pack_count() {

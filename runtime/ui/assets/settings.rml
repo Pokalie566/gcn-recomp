@@ -10,7 +10,10 @@
 		<div class="tabs">
 			<button id="tab0" autofocus="autofocus" data-class-active="tab == 0" data-event-click="tab(0)">Graphics</button>
 			<button id="tab1" data-class-active="tab == 1" data-event-click="tab(1)">Controls</button>
-			<button id="tab2" data-class-active="tab == 2" data-event-click="tab(2)">System</button>
+			<button id="tab2" data-class-active="tab == 2" data-event-click="tab(2)">Controller</button>
+			<button id="tab3" data-class-active="tab == 3" data-event-click="tab(3)">Textures</button>
+			<button id="tab4" data-class-active="tab == 4" data-event-click="tab(4)">Disc</button>
+			<button id="tab5" data-class-active="tab == 5" data-event-click="tab(5)">System</button>
 		</div>
 
 		<div class="page" data-class-shown="tab == 0">
@@ -30,17 +33,9 @@
 				<span>Fullscreen <span class="note">F11</span></span>
 				<span class="switch" data-class-on="fullscreen"><span class="knob"/></span>
 			</button>
-			<button class="row" data-event-click="toggle('textures')">
-				<span>Texture packs <span class="note">from textures/</span></span>
-				<span class="switch" data-class-on="textures"><span class="knob"/></span>
-			</button>
 		</div>
 
 		<div class="page" data-class-shown="tab == 1">
-			<button class="row" data-event-click="toggle('rumble')">
-				<span>Vibration <span class="note">when the game rumbles the pad</span></span>
-				<span class="switch" data-class-on="rumble"><span class="knob"/></span>
-			</button>
 			<button class="row" data-event-click="toggle('mouse_aim')">
 				<span>Mouse aim <span class="note">the mouse as the C stick</span></span>
 				<span class="switch" data-class-on="mouse_aim"><span class="knob"/></span>
@@ -61,6 +56,65 @@
 		</div>
 
 		<div class="page" data-class-shown="tab == 2">
+			<p class="line"><span>{{pad_name}}</span></p>
+			<div class="padtest">
+				<div class="stickbox"><div class="stick"><div class="dot" data-style-left="stick_x" data-style-top="stick_y"/></div><p>Stick</p></div>
+				<div class="stickbox"><div class="stick"><div class="dot c" data-style-left="cstick_x" data-style-top="cstick_y"/></div><p>C</p></div>
+				<div class="padright">
+					<div class="chips">
+						<span class="chip" data-class-on="pad_a">A</span><span class="chip" data-class-on="pad_b">B</span>
+						<span class="chip" data-class-on="pad_x">X</span><span class="chip" data-class-on="pad_y">Y</span>
+						<span class="chip" data-class-on="pad_z">Z</span><span class="chip" data-class-on="pad_start">Start</span>
+					</div>
+					<div class="chips">
+						<span class="chip" data-class-on="pad_up">↑</span><span class="chip" data-class-on="pad_down">↓</span>
+						<span class="chip" data-class-on="pad_left">←</span><span class="chip" data-class-on="pad_right">→</span>
+					</div>
+					<div class="trig"><span>L</span><div class="track"><div class="fill" data-style-width="trig_l"/></div></div>
+					<div class="trig"><span>R</span><div class="track"><div class="fill" data-style-width="trig_r"/></div></div>
+				</div>
+			</div>
+			<button class="row stepper" nudge="deadzone">
+				<span>Stick dead zone <span class="note">how far a stick moves before it counts</span></span>
+				<span class="value"><span class="arrow" data-event-click="nudge('deadzone', -1)">‹</span>{{deadzone * 100 | format(0)}} %<span class="arrow" data-event-click="nudge('deadzone', 1)">›</span></span>
+			</button>
+			<button class="row" data-event-click="toggle('rumble')">
+				<span>Vibration <span class="note">when the game rumbles the pad</span></span>
+				<span class="switch" data-class-on="rumble"><span class="knob"/></span>
+			</button>
+			<button class="row" data-event-click="test_rumble">
+				<span>Test the vibration</span>
+			</button>
+		</div>
+
+		<div class="page" data-class-shown="tab == 3">
+			<button class="row" data-event-click="toggle('textures')">
+				<span>Texture packs <span class="note">Dolphin's, as they are</span></span>
+				<span class="switch" data-class-on="textures"><span class="knob"/></span>
+			</button>
+			<button class="row" data-for="p, i : packs" data-event-click="toggle_pack(i)">
+				<span>{{p.name}} <span class="note">{{p.count}}</span></span>
+				<span class="switch" data-class-on="p.on"><span class="knob"/></span>
+			</button>
+			<p class="line note" data-if="packs.size == 0">No pack yet. Copy a pack's GLME01 folder into the textures folder, then come back.</p>
+			<button class="row" data-event-click="open_textures">
+				<span>Show the textures folder</span>
+			</button>
+		</div>
+
+		<div class="page" data-class-shown="tab == 4">
+			<p class="line"><span><span class="dot" data-class-ok="disc_state == 'ok'" data-class-fail="disc_state == 'fail'" data-class-warn="disc_state == 'warn'"/>{{disc_name}}</span></p>
+			<p class="line note">{{disc_detail}}</p>
+			<button class="row" data-event-click="pick_disc">
+				<span>Choose a disc image… <span class="note">or drop one on the window</span></span>
+			</button>
+			<button class="row" data-if="!in_game" data-event-click="prepare_again">
+				<span>Prepare the game again <span class="note">from this disc</span></span>
+			</button>
+			<p class="line note" data-if="in_game">A new disc is played from the next start.</p>
+		</div>
+
+		<div class="page" data-class-shown="tab == 5">
 			<button class="row stepper" nudge="volume">
 				<span>Volume</span>
 				<span class="value"><span class="arrow" data-event-click="nudge('volume', -1)">‹</span>{{volume}} %<span class="arrow" data-event-click="nudge('volume', 1)">›</span></span>
@@ -68,6 +122,9 @@
 			<button class="row stepper" nudge="lang">
 				<span>Language <span class="note">at the next start</span></span>
 				<span class="value"><span class="arrow" data-event-click="nudge('lang', -1)">‹</span>{{lang_label}}<span class="arrow" data-event-click="nudge('lang', 1)">›</span></span>
+			</button>
+			<button class="row" data-if="!in_game" data-event-click="setup_again">
+				<span>Run the first-launch assistant again</span>
 			</button>
 		</div>
 	</div>

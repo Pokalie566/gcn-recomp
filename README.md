@@ -81,7 +81,10 @@ project gives them its look with its own `theme.rcss` (gcn_add_game's `UI`).
 built in, and on macOS a `<APP_NAME>.app` whose Resources hold what preparing the game on
 the player's machine needs. It opens on a launcher (`runtime/ui/launcher.h`) that checks
 everything, prepares the game from the disc the player drops on it, and plays; the player's
-state goes to `~/Library/Application Support/<APP_NAME>`. Built from the same build of the
+state goes to `~/Library/Application Support/<APP_NAME>`. Its first launch runs an assistant
+(disc with the system's own file picker, preparation, controller test, display, texture
+packs); its settings have Controller, Textures (pack by pack) and Disc pages besides.
+`APP_ICON` gives it an icon. Built from the same build of the
 game, without `GCN_APP`, the launcher is there too (`--no-launcher` skips it).
 
 The menus use RmlUi (MIT) and FreeType (the FreeType License: portions of this software are

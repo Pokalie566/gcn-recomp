@@ -6,6 +6,7 @@
 #pragma once
 #include "bindings.h"
 #include <string>
+#include <vector>
 
 struct Settings {
     std::string iso;            // the disc image; empty: the build's, else the first in rom/
@@ -16,9 +17,12 @@ struct Settings {
     bool textures = true;       // custom textures, when there is a pack
     bool mouse_aim = false;     // the mouse as the C stick
     bool rumble = true;         // the controller's, when the game runs the pad's motor
+    float deadzone = 0.12f;     // how far a controller's stick moves before it counts
     float mouse_sens = 1.0f;
     int volume = 100;           // percent
     std::string lang = "auto";  // the menus': "auto" (the system's), "en" or "fr"; at the next start
+    std::vector<std::string> textures_off;   // texture packs turned off, by their folder's name
+    bool setup_done = false;    // the first launch's assistant has been through
     Bindings bindings = bindings_default();
     bool operator==(const Settings&) const = default;
 };

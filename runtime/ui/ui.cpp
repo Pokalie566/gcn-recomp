@@ -27,6 +27,10 @@ struct BindRow {
 struct SaveRow {
     Rml::String comment, when;
 };
+struct PackRow {
+    Rml::String name, count;
+    bool on;
+};
 struct BackupRow {
     Rml::String when, saves;
 };
@@ -92,6 +96,25 @@ bool g_in_game;                // the saves page from the pause menu: no restori
 Rml::Vector<SaveRow> g_save_rows;
 Rml::Vector<BackupRow> g_backup_rows;
 Rml::String g_saves_message;
+
+Rml::ElementDocument* g_setup;
+int g_setup_step;
+bool g_setup_can_next;
+bool g_refocus;                // after the next update, focus what the page now shows
+
+Rml::String g_pad_name, g_stick_x = "50%", g_stick_y = "50%", g_cstick_x = "50%", g_cstick_y = "50%";
+Rml::String g_trig_l = "0%", g_trig_r = "0%";
+bool g_pad[10];                // A B X Y Z Start up down left right
+const char* const kPadVars[10] = {"pad_a", "pad_b", "pad_x", "pad_y", "pad_z", "pad_start", "pad_up", "pad_down", "pad_left", "pad_right"};
+PadState g_pad_last;
+
+std::vector<UiPack> g_pack_list;
+Rml::Vector<PackRow> g_packs;
+Rml::String g_packs_summary;
+Rml::String g_disc_name, g_disc_state, g_disc_detail;
+
+void packs_update();
+void setup_update();
 
 bool starts(const std::string& s, const char* p) { return s.compare(0, strlen(p), p) == 0; }
 
@@ -161,17 +184,25 @@ void nudge(const Rml::String& var, int dir) {
     if (var == "scale") g_s.scale = std::clamp(g_s.scale + dir, 1, 4);
     else if (var == "volume") g_s.volume = std::clamp(g_s.volume + 5 * dir, 0, 100);
     else if (var == "mouse_sens") g_s.mouse_sens = std::clamp(std::round((g_s.mouse_sens + 0.25f * dir) * 4) / 4, 0.25f, 4.0f);
+    else if (var == "deadzone") g_s.deadzone = std::clamp(std::round(g_s.deadzone * 100 + dir) / 100, 0.02f, 0.40f);
     g_model.DirtyVariable(var);
 }
 
 void show(Rml::ElementDocument* doc) {
-    for (Rml::ElementDocument* d : {g_launcher, g_pause, g_settings, g_saves})
+    for (Rml::ElementDocument* d : {g_launcher, g_pause, g_settings, g_saves, g_setup})
         if (d != doc) d->Hide();
     doc->Show(Rml::ModalFlag::None, Rml::FocusFlag::Auto);
 }
 
 // Esc, or the controller's B: one page back; from the pause menu, back to the game.
 void back() {
+    if (g_setup->IsVisible()) {
+        if (g_setup_step > 0 && g_setup_step < 6) {
+            g_setup_step--;
+            setup_update();
+        }
+        return;
+    }
     if (g_settings->IsVisible() || g_saves->IsVisible()) show(g_home);
     else if (g_pause->IsVisible()) g_action = UI_RESUME;
 }
@@ -227,6 +258,14 @@ void render_frame(int w, int h) {
     g_ctx->SetDimensions({w, h});
     g_ctx->SetDensityIndependentPixelRatio((float)h / 720.0f);
     g_ctx->Update();
+    if (g_refocus) {
+        // The page's elements are the ones the last change made: the assistant's step.
+        g_refocus = false;
+        // Next, or on the last step, which has none, its first choice.
+        Rml::Element* to = g_setup_step == 6 ? g_setup->QuerySelector(".step.shown button")
+                                             : g_setup->GetElementById("setup_next");
+        if (to) to->Focus(true);
+    }
     g_render->SetViewport(w, h);
     g_render->BeginFrame();
     g_ctx->Render();
@@ -270,6 +309,29 @@ void load_strings(const std::string& path) {
         if (line.empty() || line[0] == '#' || eq == std::string::npos) continue;
         g_strings[line.substr(0, eq)] = line.substr(eq + 3);
     }
+}
+
+// Whether the assistant may go on from its step: not without a disc that is the game, nor
+// before the game is prepared from it.
+void setup_update() {
+    g_setup_can_next = g_setup_step == 1 ? g_l.disc_ok : g_setup_step == 2 ? g_l.can_play : true;
+    g_model.DirtyVariable("setup_step");
+    g_model.DirtyVariable("setup_can_next");
+    g_refocus = true;
+}
+
+void packs_update() {
+    g_packs.clear();
+    size_t total = 0;
+    for (const UiPack& p : g_pack_list) {
+        const bool on = std::find(g_s.textures_off.begin(), g_s.textures_off.end(), p.name) == g_s.textures_off.end();
+        g_packs.push_back({p.name.empty() ? ui_tr("Loose files") : p.name, p.textures == 1 ? ui_tr("1 texture") : ui_trf("{} textures", std::to_string(p.textures)), on});
+        if (on) total += p.textures;
+    }
+    g_packs_summary = g_pack_list.empty() ? ui_tr("No pack yet.")
+                                          : ui_trf("{} textures in use.", std::to_string(total));
+    g_model.DirtyVariable("packs");
+    g_model.DirtyVariable("packs_summary");
 }
 
 }  // namespace
@@ -359,6 +421,29 @@ bool ui_init(SDL_Window* win, const std::string& dir, const std::string& lang) {
     m.Bind("saves", &g_save_rows);
     m.Bind("backups", &g_backup_rows);
     m.Bind("saves_message", &g_saves_message);
+    m.Bind("deadzone", &g_s.deadzone);
+    if (auto s = m.RegisterStruct<PackRow>()) {
+        s.RegisterMember("name", &PackRow::name);
+        s.RegisterMember("count", &PackRow::count);
+        s.RegisterMember("on", &PackRow::on);
+    }
+    m.RegisterArray<Rml::Vector<PackRow>>();
+    m.Bind("packs", &g_packs);
+    m.Bind("packs_summary", &g_packs_summary);
+    m.Bind("pad_name", &g_pad_name);
+    for (int i = 0; i < 10; i++) m.Bind(kPadVars[i], &g_pad[i]);
+    m.Bind("stick_x", &g_stick_x);
+    m.Bind("stick_y", &g_stick_y);
+    m.Bind("cstick_x", &g_cstick_x);
+    m.Bind("cstick_y", &g_cstick_y);
+    m.Bind("trig_l", &g_trig_l);
+    m.Bind("trig_r", &g_trig_r);
+    m.Bind("disc_name", &g_disc_name);
+    m.Bind("disc_state", &g_disc_state);
+    m.Bind("disc_detail", &g_disc_detail);
+    m.Bind("disc_ok", &g_l.disc_ok);
+    m.Bind("setup_step", &g_setup_step);
+    m.Bind("setup_can_next", &g_setup_can_next);
 
     using Args = const Rml::VariantList&;
     using H = Rml::DataModelHandle;
@@ -395,6 +480,27 @@ bool ui_init(SDL_Window* win, const std::string& dir, const std::string& lang) {
         g_capture_pad = a[1].Get<Rml::String>() == "pad";
         rows_update();
     });
+    m.BindEventCallback("pick_disc", [](H, Rml::Event&, Args) { act(UI_PICK_DISC); });
+    m.BindEventCallback("prepare_again", [](H, Rml::Event&, Args) { act(UI_PREPARE_AGAIN); });
+    m.BindEventCallback("test_rumble", [](H, Rml::Event&, Args) { act(UI_TEST_RUMBLE); });
+    m.BindEventCallback("open_textures", [](H, Rml::Event&, Args) { act(UI_OPEN_TEXTURES); });
+    m.BindEventCallback("setup_again", [](H, Rml::Event&, Args) { act(UI_SETUP_AGAIN); });
+    m.BindEventCallback("setup_done", [](H, Rml::Event&, Args a) { act(UI_SETUP_DONE, a.empty() ? 0 : a[0].Get<int>()); });
+    m.BindEventCallback("setup_step_by", [](H, Rml::Event&, Args a) {
+        const int d = a.empty() ? 1 : a[0].Get<int>();
+        if (d > 0 && !g_setup_can_next) return;
+        g_setup_step = std::clamp(g_setup_step + d, 0, 6);
+        setup_update();
+    });
+    m.BindEventCallback("toggle_pack", [](H, Rml::Event&, Args a) {
+        const int i = a.empty() ? -1 : a[0].Get<int>();
+        if (i < 0 || i >= (int)g_pack_list.size()) return;
+        auto& off = g_s.textures_off;
+        const auto it = std::find(off.begin(), off.end(), g_pack_list[i].name);
+        if (it == off.end()) off.push_back(g_pack_list[i].name);
+        else off.erase(it);
+        packs_update();
+    });
     m.BindEventCallback("reset_bindings", [](H, Rml::Event&, Args) {
         g_s.bindings = bindings_default();
         rows_update();
@@ -405,12 +511,13 @@ bool ui_init(SDL_Window* win, const std::string& dir, const std::string& lang) {
     g_pause = g_ctx->LoadDocument(dir + "/pause.rml");
     g_settings = g_ctx->LoadDocument(dir + "/settings.rml");
     g_saves = g_ctx->LoadDocument(dir + "/saves.rml");
-    if (!g_launcher || !g_pause || !g_settings || !g_saves) {
+    g_setup = g_ctx->LoadDocument(dir + "/setup.rml");
+    if (!g_launcher || !g_pause || !g_settings || !g_saves || !g_setup) {
         fprintf(stderr, "ui: cannot load the documents in %s\n", dir.c_str());
         g_ctx = nullptr;
         return false;
     }
-    for (Rml::ElementDocument* d : {g_launcher, g_pause, g_settings, g_saves}) {
+    for (Rml::ElementDocument* d : {g_launcher, g_pause, g_settings, g_saves, g_setup}) {
         d->AddEventListener(Rml::EventId::Keydown, &g_keys);
         d->AddEventListener(Rml::EventId::Focus, &g_keys, true);   // focus does not bubble
     }
@@ -424,6 +531,7 @@ void ui_set_settings(const Settings& s) {
     g_s = s;
     rows_update();
     lang_label_update();
+    packs_update();
     g_model.DirtyAllVariables();
 }
 
@@ -453,6 +561,7 @@ void ui_show_launcher(const Settings& s, const UiLauncher& l) {
 void ui_set_launcher(const UiLauncher& l) {
     if (!g_ctx) return;
     g_l = l;
+    if (g_setup->IsVisible()) setup_update();
     g_has_banner = !l.banner.empty();
     g_progress_width = std::to_string((int)std::lround(std::clamp(l.progress, 0.0f, 1.0f) * 100)) + "%";
     g_model.DirtyAllVariables();
@@ -474,11 +583,12 @@ void ui_set_saves(const UiSaves& s) {
 
 void ui_hide() {
     if (!g_ctx) return;
-    for (Rml::ElementDocument* d : {g_launcher, g_pause, g_settings, g_saves}) d->Hide();
+    for (Rml::ElementDocument* d : {g_launcher, g_pause, g_settings, g_saves, g_setup}) d->Hide();
 }
 
 bool ui_open() {
-    return g_ctx && (g_launcher->IsVisible() || g_pause->IsVisible() || g_settings->IsVisible() || g_saves->IsVisible());
+    return g_ctx && (g_launcher->IsVisible() || g_pause->IsVisible() || g_settings->IsVisible() ||
+                     g_saves->IsVisible() || g_setup->IsVisible());
 }
 
 bool ui_event(SDL_Event& e) {
@@ -499,7 +609,7 @@ bool ui_event(SDL_Event& e) {
         if (e.cbutton.button == SDL_CONTROLLER_BUTTON_B) back();
         else if (g_settings->IsVisible() && (e.cbutton.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER ||
                                              e.cbutton.button == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)) {
-            g_tab = (g_tab + (e.cbutton.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER ? 2 : 1)) % 3;
+            g_tab = (g_tab + (e.cbutton.button == SDL_CONTROLLER_BUTTON_LEFTSHOULDER ? 5 : 1)) % 6;
             g_model.DirtyVariable("tab");
             if (Rml::Element* t = g_settings->GetElementById("tab" + std::to_string(g_tab))) t->Focus(true);
         } else if (const auto k = controller_key(e.cbutton.button); k != Rml::Input::KI_UNKNOWN) {
@@ -574,3 +684,57 @@ void ui_script(int w, int h) {
     e.type = SDL_KEYUP;
     SDL_PushEvent(&e);
 }
+
+void ui_show_setup(const Settings& s, const UiLauncher& l) {
+    if (!g_ctx) return;
+    g_capture = -1;
+    g_action = UI_NONE;
+    g_in_game = false;
+    g_home = g_launcher;
+    g_setup_step = 0;
+    ui_set_settings(s);
+    ui_set_launcher(l);
+    show(g_setup);
+    setup_update();
+}
+
+void ui_set_pad(const PadState& p, const std::string& controller) {
+    if (!g_ctx) return;
+    if (g_pad_name != controller) {
+        g_pad_name = controller;
+        g_model.DirtyVariable("pad_name");
+    }
+    if (!memcmp(&p, &g_pad_last, sizeof(p))) return;
+    g_pad_last = p;
+    static const uint16_t bits[10] = {PAD_A, PAD_B, PAD_X, PAD_Y, PAD_Z, PAD_START, PAD_UP, PAD_DOWN, PAD_LEFT, PAD_RIGHT};
+    for (int i = 0; i < 10; i++)
+        if (g_pad[i] != ((p.buttons & bits[i]) != 0)) {
+            g_pad[i] = !g_pad[i];
+            g_model.DirtyVariable(kPadVars[i]);
+        }
+    // A stick's 28..228 across its circle, up at the top.
+    auto pct = [](int v) { return std::to_string(std::clamp((v - 28) * 100 / 200, 0, 100)) + "%"; };
+    g_stick_x = pct(p.stick_x);
+    g_stick_y = pct(256 - p.stick_y);
+    g_cstick_x = pct(p.cstick_x);
+    g_cstick_y = pct(256 - p.cstick_y);
+    g_trig_l = std::to_string(p.trig_l * 100 / 255) + "%";
+    g_trig_r = std::to_string(p.trig_r * 100 / 255) + "%";
+    for (const char* v : {"stick_x", "stick_y", "cstick_x", "cstick_y", "trig_l", "trig_r"}) g_model.DirtyVariable(v);
+}
+
+void ui_set_packs(const std::vector<UiPack>& packs) {
+    if (!g_ctx) return;
+    g_pack_list = packs;
+    packs_update();
+}
+
+void ui_set_disc(const std::string& name, const std::string& state, const std::string& detail) {
+    if (!g_ctx) return;
+    g_disc_name = name;
+    g_disc_state = state;
+    g_disc_detail = detail;
+    for (const char* v : {"disc_name", "disc_state", "disc_detail"}) g_model.DirtyVariable(v);
+}
+
+bool ui_setup_open() { return g_ctx && g_setup->IsVisible(); }

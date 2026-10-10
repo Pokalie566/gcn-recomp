@@ -87,10 +87,10 @@ body.pause .hints { left: 96dp; }
 .tabs { margin-bottom: 18dp; }
 .tabs button {
 	display: inline-block;
-	font-size: 20dp;
+	font-size: 17dp;
 	font-weight: bold;
-	padding: 8dp 20dp;
-	margin-right: 8dp;
+	padding: 7dp 14dp;
+	margin-right: 6dp;
 	border-radius: 20dp;
 	transition: background-color color 0.12s cubic-out;
 }
@@ -281,5 +281,71 @@ button.small {
 	font-size: 16dp;
 	padding: 4dp 16dp;
 	border-radius: 8dp;
+	transition: background-color color 0.12s cubic-out;
+}
+
+/* ---- The controller test (Settings, Controller; the assistant) ---- */
+
+.padtest {
+	display: flex;
+	align-items: center;
+	padding: 6dp 18dp 14dp 18dp;
+}
+.stickbox { width: 110dp; text-align: center; font-size: 14dp; }
+.stick {
+	position: relative;
+	width: 80dp;
+	height: 80dp;
+	margin: 0 auto 4dp auto;
+	border-radius: 40dp;
+	border-width: 2dp;
+}
+.stick .dot {
+	position: absolute;
+	width: 16dp;
+	height: 16dp;
+	margin: -8dp 0 0 -8dp;
+	border-radius: 8dp;
+}
+.padright { margin-left: 20dp; }
+.chips { margin-bottom: 8dp; }
+.chip {
+	display: inline-block;
+	min-width: 26dp;
+	padding: 3dp 8dp;
+	margin-right: 6dp;
+	text-align: center;
+	font-size: 15dp;
+	font-weight: bold;
+	border-radius: 6dp;
+}
+.trig { display: flex; align-items: center; font-size: 14dp; margin-top: 4dp; }
+.trig span { width: 18dp; }
+.trig .track, .track.wide {
+	width: 220dp;
+	height: 8dp;
+	border-radius: 4dp;
+}
+.track.wide { width: auto; margin: 14dp 18dp; }
+.trig .fill, .track.wide .fill { height: 8dp; border-radius: 4dp; }
+p.line .dot { display: inline-block; vertical-align: middle; }
+
+/* ---- The assistant ---- */
+
+body.setup .window h1 { margin-top: 6dp; }
+.step { display: none; height: 470dp; }
+.step.shown { display: block; }
+.setupnav {
+	position: absolute;
+	right: 36dp;
+	bottom: 26dp;
+}
+.setupnav button {
+	display: inline-block;
+	font-size: 20dp;
+	font-weight: bold;
+	padding: 8dp 26dp;
+	margin-left: 10dp;
+	border-radius: 10dp;
 	transition: background-color color 0.12s cubic-out;
 }

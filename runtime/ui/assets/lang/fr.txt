@@ -123,3 +123,45 @@ The newest copy is already the same as the card. = La copie la plus récente est
 No card yet: it is made at the first save. = Pas encore de carte : elle est créée à la première sauvegarde.
 Restored the copy of {}. The card as it was is now a copy. = Copie du {} restaurée. La carte d'avant est gardée en copie.
 Could not restore that copy. = Impossible de restaurer cette copie.
+
+# Réglages : Manette, Textures, Disque
+Controller = Manette
+Disc = Disque
+Stick dead zone = Zone morte des sticks
+how far a stick moves before it counts = jusqu'où un stick bouge avant de compter
+Test the vibration = Tester les vibrations
+Dolphin's, as they are = ceux de Dolphin, tels quels
+No pack yet. Copy a pack's GLME01 folder into the textures folder, then come back. = Aucun pack pour l'instant. Copie le dossier GLME01 d'un pack dans le dossier des textures, puis reviens.
+Show the textures folder = Ouvrir le dossier des textures
+Loose files = Fichiers à la racine
+{} textures = {} textures
+No pack yet. = Aucun pack pour l'instant.
+{} textures in use. = {} textures utilisées.
+Choose a disc image… = Choisir une image disque…
+or drop one on the window = ou en déposer une sur la fenêtre
+Prepare the game again = Préparer le jeu à nouveau
+from this disc = depuis ce disque
+A new disc is played from the next start. = Un nouveau disque est joué au prochain lancement.
+Run the first-launch assistant again = Relancer l'assistant de premier lancement
+No disc yet = Aucun disque
+No controller: the keyboard plays = Aucune manette : on joue au clavier
+Choose your disc image = Choisis ton image disque
+
+# L'assistant du premier lancement
+Welcome = Bienvenue
+This app plays the game from your own disc. Nothing of the game comes with it: it is built on this computer, from your disc image, once. = Cette app lance le jeu depuis ton propre disque. Rien du jeu n'est fourni avec : il est construit sur cet ordinateur, depuis ton image disque, une seule fois.
+The next few steps choose the disc, prepare the game, and set up the controller, the display and texture packs. All of it can be changed later in Settings. = Les étapes suivantes choisissent le disque, préparent le jeu, et règlent la manette, l'affichage et les packs de textures. Tout se change ensuite dans les réglages.
+Your disc = Ton disque
+Choose your disc image (.iso or .ciso), or drop it on this window. = Choisis ton image disque (.iso ou .ciso), ou dépose-la sur cette fenêtre.
+Preparing the game = Préparation du jeu
+The game is built from your disc, with this computer's own tools. It takes a minute or two, and is done once. = Le jeu est construit depuis ton disque, avec les outils de cet ordinateur. Ça prend une minute ou deux, une seule fois.
+Press buttons and move the sticks to try them. = Appuie sur des boutons et bouge les sticks pour les essayer.
+Every button can be changed in Settings, Controls. = Chaque bouton se change dans Réglages, Contrôles.
+Display = Affichage
+Packs made for Dolphin work as they are: copy a pack's GLME01 folder into the textures folder. = Les packs faits pour Dolphin marchent tels quels : copie le dossier GLME01 d'un pack dans le dossier des textures.
+Use texture packs = Utiliser les packs de textures
+All set = C'est prêt
+Esc (or Back on a controller) pauses the game: saves, settings, back to the launcher. = Échap (ou Back sur une manette) met le jeu en pause : sauvegardes, réglages, retour au lanceur.
+Go to the launcher = Aller au lanceur
+Next = Suivant
+1 texture = 1 texture

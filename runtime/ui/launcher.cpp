@@ -7,6 +7,7 @@
 #include "prepare.h"
 #include "runtime.h"
 #include "saves.h"
+#include "ui/pick_file.h"
 #include "ui/ui.h"
 #include <fstream>
 #include <mutex>
@@ -153,7 +154,13 @@ void check(const LauncherEnv& env, const Settings& cur) {
     const size_t textures = gx::texture_pack_count();
     if (!textures) l.checks.push_back({"Textures", "ok", ui_tr("The game's own (no pack in textures/)")});
     else l.checks.push_back({"Textures", "ok", ui_trf("{} in the pack", std::to_string(textures)) + (cur.textures ? "" : ui_tr(", turned off in Settings"))});
+    l.disc_ok = disc_ok;
     l.can_play = disc_ok && !g_module.empty() && !l.preparing;
+    // The Disc settings page: the disc's check, and the game's when there is a disc.
+    const UiCheck& disc = l.checks[0];
+    const UiCheck* game = l.checks.size() > 1 && l.checks[1].label == "Game" ? &l.checks[1] : nullptr;
+    ui_set_disc(l.no_disc && cur.iso.empty() ? ui_tr("No disc yet") : cur.iso.substr(cur.iso.find_last_of("/\\") + 1),
+                game ? game->state : disc.state, game ? game->detail : disc.detail);
     l.can_prepare = disc_ok && g_module.empty() && tools && !l.preparing;
 #ifdef __APPLE__
     l.can_install_tools = !tools && g_module.empty();
@@ -215,10 +222,41 @@ bool saves_act(int action, int index) {
 
 void saves_backup_on_start() { card_backup(card_path(), copies_dir(), kKeepCopies); }
 
+void settings_pages_update(const Settings& cur, bool in_game) {
+    if (in_game) {
+        const bool ok = plat_readable(cur.iso.c_str());
+        ui_set_disc(cur.iso.substr(cur.iso.find_last_of("/\\") + 1), ok ? "ok" : "fail", cur.iso);
+    }
+    std::vector<UiPack> packs;
+    for (const gx::TexturePack& p : gx::texture_pack_list()) packs.push_back({p.name, p.textures});
+    ui_set_packs(packs);
+}
+
 bool launcher_run(LauncherEnv& env, Settings& cur) {
     check(env, cur);
-    ui_show_launcher(cur, g_l);
+    if (cur.setup_done) ui_show_launcher(cur, g_l);
+    else ui_show_setup(cur, g_l);
     saves_update();
+    settings_pages_update(cur, false);
+    // A disc chosen, dropped on the window or picked: the one to play from now on.
+    auto set_disc = [&](const std::string& path) {
+        if (g_l.preparing) return;
+        Settings s = cur;
+        s.iso = path;
+        env.commit(s);
+        cur = s;
+        ui_set_settings(cur);   // or the menus, still on the old disc, would put it back
+        g_failed.clear();
+        check(env, cur);
+    };
+    auto start_preparing = [&] {
+        g_failed.clear();
+        g_l.preparing = true;
+        g_l.progress = 0;
+        g_l.progress_text = ui_trf("Preparing: {}", ui_tr("starting"));
+        check(env, cur);
+        prepare_start(cur.iso);
+    };
     for (;;) {
         SDL_Event e;
         while (SDL_PollEvent(&e)) {
@@ -229,15 +267,7 @@ bool launcher_run(LauncherEnv& env, Settings& cur) {
             const bool scripted_drop = e.type == SDL_USEREVENT && e.user.code == kUiDropEvent;
             if (e.type == SDL_DROPFILE || scripted_drop) {
                 char* file = scripted_drop ? (char*)e.user.data1 : e.drop.file;
-                if (!g_l.preparing) {
-                    Settings s = cur;
-                    s.iso = file;
-                    env.commit(s);
-                    cur = s;
-                    ui_set_settings(cur);   // or the menus, still on the old disc, would put it back
-                    g_failed.clear();
-                    check(env, cur);
-                }
+                set_disc(file);
                 SDL_free(file);
                 continue;
             }
@@ -246,15 +276,30 @@ bool launcher_run(LauncherEnv& env, Settings& cur) {
                 if (!g_l.preparing) check(env, cur);
                 continue;
             }
+            if (e.type == SDL_WINDOWEVENT && e.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
+                // Back from the file browser, a pack copied in maybe: look again.
+                gx::texture_pack_reset();
+                settings_pages_update(cur, false);
+            }
             if (ui_event(e)) continue;
             env.event(e);
         }
+        ui_set_pad(env.pad(), env.pad_name());
 
-        const UiAction a = ui_take_action();
+        UiAction a = ui_take_action();
         const int index = ui_action_index();
         if (a == UI_QUIT) {
             if (g_prep.thread.joinable()) g_prep.thread.detach();
             return false;
+        }
+        if (a == UI_SETUP_DONE) {
+            Settings s = cur;
+            s.setup_done = true;
+            env.commit(s);
+            cur = s;
+            ui_set_settings(cur);
+            if (index == 1 && g_l.can_play) a = UI_PLAY;
+            else ui_show_launcher(cur, g_l);
         }
         if (a == UI_PLAY) {
             std::string err;
@@ -266,13 +311,17 @@ bool launcher_run(LauncherEnv& env, Settings& cur) {
             g_failed = "Cannot load the prepared game: " + err;
             g_module.clear();
             check(env, cur);
-        } else if (a == UI_PREPARE) {
-            g_failed.clear();
-            g_l.preparing = true;
-            g_l.progress = 0;
-            g_l.progress_text = ui_trf("Preparing: {}", ui_tr("starting"));
-            check(env, cur);
-            prepare_start(cur.iso);
+        } else if (a == UI_PREPARE || (a == UI_PREPARE_AGAIN && g_l.disc_ok && !g_l.preparing)) {
+            start_preparing();
+        } else if (a == UI_PICK_DISC) {
+            const std::string path = ui_pick_disc(ui_tr("Choose your disc image"));
+            if (!path.empty()) set_disc(path);
+        } else if (a == UI_TEST_RUMBLE) {
+            env.rumble();
+        } else if (a == UI_OPEN_TEXTURES) {
+            plat_open_folder(gx::texture_pack_dir());
+        } else if (a == UI_SETUP_AGAIN) {
+            ui_show_setup(cur, g_l);
         } else if (a == UI_INSTALL_TOOLS) {
             plat_run({"xcode-select", "--install"}, kPlatNull);
         } else if (saves_act(a, index)) {
@@ -299,7 +348,8 @@ bool launcher_run(LauncherEnv& env, Settings& cur) {
                 g_l.preparing = false;
                 if (!g_prep.ok) g_failed = g_prep.error;
                 check(env, cur);
-                ui_show_launcher(cur, g_l);   // the Prepare button is gone: the focus goes to Play
+                // The Prepare button is gone: the focus goes to Play, or the assistant's Next.
+                if (!ui_setup_open()) ui_show_launcher(cur, g_l);
             } else {
                 for (UiCheck& c : g_l.checks)
                     if (c.label == "Prepared") c.detail = g_l.progress_text;

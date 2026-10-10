@@ -34,6 +34,14 @@ bool settings_load(const std::string& path, Settings& s) {
         else if (k == "mouse_sens") r.mouse_sens = (float)atof(v.c_str());
         else if (k == "volume") r.volume = atoi(v.c_str());
         else if (k == "lang") r.lang = v;
+        else if (k == "deadzone") r.deadzone = (float)atof(v.c_str());
+        else if (k == "setup_done") r.setup_done = to_bool(v);
+        else if (k == "textures_off") {
+            r.textures_off.clear();
+            std::stringstream ss(v);
+            for (std::string item; std::getline(ss, item, ',');)
+                if (!(item = trim(item)).empty()) r.textures_off.push_back(item);
+        }
         else if (k.compare(0, 5, "bind.") == 0) {
             for (int a = 0; a < ACT_COUNT; a++) {
                 if (k.compare(5, std::string::npos, kPadActionNames[a]) != 0) continue;
@@ -64,6 +72,11 @@ bool settings_save(const std::string& path, const Settings& s) {
         << "mouse_sens = " << s.mouse_sens << "\n"
         << "volume = " << s.volume << "\n"
         << "lang = " << s.lang << "\n"
+        << "deadzone = " << s.deadzone << "\n"
+        << "setup_done = " << s.setup_done << "\n"
+        << "textures_off = ";
+    for (size_t i = 0; i < s.textures_off.size(); i++) out << (i ? ", " : "") << s.textures_off[i];
+    out << "\n"
         << "\n# Pad bindings: key:<key>, pad:<button>, axis:+<axis> or axis:-<axis>, comma-separated.\n";
     for (int a = 0; a < ACT_COUNT; a++) {
         out << "bind." << kPadActionNames[a] << " =";

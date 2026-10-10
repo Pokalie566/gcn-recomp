@@ -60,6 +60,19 @@ size_t texture_pack_count();
 // Forgets the pack, to be looked for again at its next use (for a test that changes it).
 void texture_pack_reset();
 
+// A pack is a folder in the game's pack folder (textures/<game id>), as Dolphin's are copied
+// there; files right in it are a pack with no name. One can be turned off, by name: its
+// textures are left out from then on (texture_cache_clear shows it on textures already in use).
+struct TexturePack {
+    std::string name;
+    size_t textures;
+    bool on;
+};
+std::vector<TexturePack> texture_pack_list();
+void texture_pack_set_off(const std::vector<std::string>& packs);
+// Where packs go, whether or not there is one yet.
+std::string texture_pack_dir();
+
 // A DDS file's top level as RGBA8. False, with the reason, for a format it does not read.
 bool dds_decode(const uint8_t* data, size_t size, int* w, int* h, std::vector<uint32_t>* rgba, std::string* err);
 

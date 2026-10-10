@@ -41,6 +41,8 @@ option(GCN_GUEST_CHECKS "Call the game project's consistency checks at every pol
 #   [APP_ID <id>]              with GCN_APP: its bundle identifier, e.g. io.github.me.game
 #   [LICENSES <files>...]      with GCN_APP: the game project's licences, shipped with the
 #                              libraries' in the app
+#   [APP_ICON <path>]          its icon, without extension: <path>.icns (the macOS app),
+#                              .ico (the Windows executable), .png (the window, elsewhere)
 #   [ANDROID_PACKAGE <id>]     e.g. com.example.game. On an Android build, also build the
 #                              headset app (lib<target>.so, a NativeActivity that
 #                              tools/package-apk.ps1 packages) and <target>_egl, the
@@ -48,7 +50,7 @@ option(GCN_GUEST_CHECKS "Call the game project's consistency checks at every pol
 # )
 # The user's image may also be given as -DGAME_ISO=<path>.
 function(gcn_add_game)
-  cmake_parse_arguments(G "" "NAME;TITLE;DISC_ID;DOL_SHA1;SYMBOLS;TABLES;FPS;IMAGE_DIR;UI;APP_NAME;APP_ID;ANDROID_PACKAGE" "SOURCES;LICENSES" ${ARGN})
+  cmake_parse_arguments(G "" "NAME;TITLE;DISC_ID;DOL_SHA1;SYMBOLS;TABLES;FPS;IMAGE_DIR;UI;APP_NAME;APP_ID;APP_ICON;ANDROID_PACKAGE" "SOURCES;LICENSES" ${ARGN})
   foreach(req NAME TITLE DISC_ID DOL_SHA1 SYMBOLS TABLES FPS)
     if(NOT G_${req})
       message(FATAL_ERROR "gcn_add_game: ${req} is required")
@@ -327,6 +329,9 @@ function(gcn_add_game)
     if(G_UI)
       list(APPEND _ui_copy COMMAND ${CMAKE_COMMAND} -E copy_directory ${G_UI} ${_ui_dest})
     endif()
+    if(G_APP_ICON)
+      list(APPEND _ui_copy COMMAND ${CMAKE_COMMAND} -E copy ${G_APP_ICON}.png ${_ui_dest}/icon.png)
+    endif()
     add_custom_target(${G_NAME}_ui ${_ui_copy} VERBATIM)
   endif()
 
@@ -338,6 +343,18 @@ function(gcn_add_game)
     _gcn_set_standards(${G_NAME})
     target_include_directories(${G_NAME} PRIVATE ${RT} ${GLAD_INCLUDE_DIR})
     target_link_libraries(${G_NAME} PRIVATE gcn_rmlui_backend ${GCN_SDL_TARGET} ${GCN_PLATFORM_LIBS} ${CMAKE_DL_LIBS})
+    # The system's own file picker (runtime/ui/pick_file.h): AppKit on macOS, comdlg32 on Windows.
+    if(APPLE)
+      target_sources(${G_NAME} PRIVATE ${RT}/ui/pick_file_mac.mm)
+      set_source_files_properties(${RT}/ui/pick_file_mac.mm PROPERTIES LANGUAGE CXX COMPILE_FLAGS "-x objective-c++ -fobjc-arc")
+      target_link_libraries(${G_NAME} PRIVATE "-framework AppKit" "-framework UniformTypeIdentifiers")
+    elseif(WIN32)
+      target_link_libraries(${G_NAME} PRIVATE comdlg32)
+      if(G_APP_ICON)
+        file(WRITE ${CMAKE_CURRENT_BINARY_DIR}/${G_NAME}_icon.rc "1 ICON \"${G_APP_ICON}.ico\"\n")
+        target_sources(${G_NAME} PRIVATE ${CMAKE_CURRENT_BINARY_DIR}/${G_NAME}_icon.rc)
+      endif()
+    endif()
     set_target_properties(${G_NAME} PROPERTIES ENABLE_EXPORTS ON)
     add_dependencies(${G_NAME} ${G_NAME}_ui)
     if(WIN32)
@@ -369,6 +386,12 @@ function(gcn_add_game)
           MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
           MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}")
         set(_res $<TARGET_BUNDLE_CONTENT_DIR:${G_NAME}>/Resources)
+        if(G_APP_ICON)
+          get_filename_component(_icon_name ${G_APP_ICON} NAME)
+          set_target_properties(${G_NAME} PROPERTIES MACOSX_BUNDLE_ICON_FILE ${_icon_name}.icns)
+          add_custom_command(TARGET ${G_NAME} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy ${G_APP_ICON}.icns ${_res}/${_icon_name}.icns VERBATIM)
+        endif()
       else()
         set(_res $<TARGET_FILE_DIR:${G_NAME}>/resources)
       endif()

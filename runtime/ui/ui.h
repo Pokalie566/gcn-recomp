@@ -10,6 +10,7 @@
 // Settings change only while the guest is stopped (or before it starts), which is why the
 // frontend asks for them then.
 #pragma once
+#include "hw/pad.h"
 #include "saves.h"
 #include "settings.h"
 #include <SDL.h>
@@ -48,6 +49,7 @@ struct UiLauncher {
     std::string banner;        // the banner as an image file, or empty
     std::vector<UiCheck> checks;
     bool no_disc = true;       // the hint to drop one on the window shows
+    bool disc_ok = false;      // the disc is the game, in the version this port is for
     bool can_play = false, can_prepare = false, can_install_tools = false;
     bool preparing = false;
     float progress = 0;        // 0..1
@@ -55,6 +57,20 @@ struct UiLauncher {
 };
 void ui_show_launcher(const Settings& s, const UiLauncher& l);
 void ui_set_launcher(const UiLauncher& l);
+
+// The first launch's assistant: disc, preparation, controller, display, texture packs.
+void ui_show_setup(const Settings& s, const UiLauncher& l);
+bool ui_setup_open();
+
+// What the settings pages show that is not a setting. The pad as the game would read it,
+// for the controller test (cheap: call it every frame); the texture packs found; the disc.
+void ui_set_pad(const PadState& p, const std::string& controller);
+struct UiPack {
+    std::string name;
+    size_t textures;
+};
+void ui_set_packs(const std::vector<UiPack>& packs);
+void ui_set_disc(const std::string& name, const std::string& state, const std::string& detail);
 
 // ---- The saves page: what is on the card, and the copies of it ----
 struct UiSaves {
@@ -75,6 +91,9 @@ enum UiAction {
     UI_PLAY, UI_PREPARE, UI_INSTALL_TOOLS,   // the launcher's
     UI_LAUNCHER,                             // the pause menu's: back to the launcher
     UI_BACKUP, UI_RESTORE, UI_OPEN_SAVES,    // the saves page's; UI_RESTORE with ui_action_index
+    UI_PICK_DISC, UI_PREPARE_AGAIN,          // the Disc settings page's
+    UI_TEST_RUMBLE, UI_OPEN_TEXTURES,        // the Controller and Textures pages'
+    UI_SETUP_DONE, UI_SETUP_AGAIN,           // the assistant's end (index 1: play), and running it again
 };
 // What the player chose since the last call.
 UiAction ui_take_action();

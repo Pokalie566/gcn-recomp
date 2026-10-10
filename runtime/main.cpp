@@ -28,6 +28,8 @@
 #include "prepare.h"
 #include "settings.h"
 #include "ui/launcher.h"
+#include "ui/pick_file.h"
+#include "third_party/stb_image.h"
 #include "ui/ui.h"
 #include <vector>
 
@@ -162,6 +164,8 @@ static void bindings_resolve(const Bindings& b) {
 }
 
 // How far an input is pushed, 0 to 1.
+static float g_deadzone = 0.12f;   // the sticks', a setting
+
 static float read_input(const BoundInput& r, const uint8_t* keys) {
     switch (r.kind) {
     case BoundInput::KEY:
@@ -173,7 +177,7 @@ static float read_input(const BoundInput& r, const uint8_t* keys) {
         // A stick at rest is never quite centred; a trigger at rest is.
         const bool trigger = r.code == SDL_CONTROLLER_AXIS_TRIGGERLEFT || r.code == SDL_CONTROLLER_AXIS_TRIGGERRIGHT;
         const float v = (float)r.sign * SDL_GameControllerGetAxis(g_ctrl, (SDL_GameControllerAxis)r.code) / 32767.0f;
-        return v > (trigger ? 0.03f : 0.12f) ? std::min(v, 1.0f) : 0.0f;
+        return v > (trigger ? 0.03f : g_deadzone) ? std::min(v, 1.0f) : 0.0f;
     }
     }
     return 0.0f;
@@ -258,7 +262,8 @@ static bool at_rest(const PadState& p) {
            p.cstick_x == 128 && p.cstick_y == 128;
 }
 
-static void update_pad(bool paused) {
+// The pad as the player holds it, through the bindings and the mouse.
+static PadState read_pad() {
     const uint8_t* keys = SDL_GetKeyboardState(nullptr);
     float amount[ACT_COUNT];
     for (int a = 0; a < ACT_COUNT; a++) {
@@ -267,6 +272,22 @@ static void update_pad(bool paused) {
     }
     PadState p = pad_from_actions(amount);
     if (g_mouse_aim) mouse_aim_apply(p);
+    return p;
+}
+
+// The controller's name, for the settings' test; the keyboard's part goes without saying.
+static std::string pad_name() {
+    if (!g_ctrl) return ui_tr("No controller: the keyboard plays");
+    const char* n = SDL_GameControllerName(g_ctrl);
+    return n ? n : ui_tr("Controller");
+}
+
+static void rumble_test() {
+    if (g_ctrl) SDL_GameControllerRumble(g_ctrl, 0xC000, 0xC000, 500);
+}
+
+static void update_pad(bool paused) {
+    PadState p = read_pad();
     if (paused) g_hold_neutral = true;
     else if (g_hold_neutral && at_rest(p)) g_hold_neutral = false;
     if (g_hold_neutral) p = pad_from_actions(std::vector<float>(ACT_COUNT).data());
@@ -302,6 +323,11 @@ static void apply_settings(SDL_Window* win, const Settings& s, const Settings* w
         if (was) gx::texture_cache_clear();
     }
     if (changed(&Settings::bindings)) bindings_resolve(s.bindings);
+    if (changed(&Settings::textures_off)) {
+        gx::texture_pack_set_off(s.textures_off);
+        if (was) gx::texture_cache_clear();
+    }
+    g_deadzone = s.deadzone;
     if (was && changed(&Settings::iso)) fprintf(stderr, "settings: the new disc image is for the next start\n");
     audio_set_volume((float)s.volume / 100.0f);
     if (g_interpolate != 2) g_interpolate = s.interpolate;
@@ -492,13 +518,24 @@ int main(int argc, char** argv) {
     apply_settings(win, cur, nullptr);
     // The menus' documents: beside the executable, or in an app's resources.
     const char* res = getenv("GCN_RESOURCES");
-    ui_init(win, res ? std::string(res) + "/ui" : plat_executable_dir() + "/ui", cur.lang);
+    const std::string ui_dir = res ? std::string(res) + "/ui" : plat_executable_dir() + "/ui";
+    ui_init(win, ui_dir, cur.lang);
+    // The window's icon, where the game project gives one (gcn_add_game's APP_ICON).
+    int iw, ih, ich;
+    if (stbi_uc* px = stbi_load((ui_dir + "/icon.png").c_str(), &iw, &ih, &ich, 4)) {
+        if (SDL_Surface* icon = SDL_CreateRGBSurfaceWithFormatFrom(px, iw, ih, 32, iw * 4, SDL_PIXELFORMAT_RGBA32)) {
+            SDL_SetWindowIcon(win, icon);
+            SDL_FreeSurface(icon);
+        }
+        stbi_image_free(px);
+    }
     // A change the player made: applied, and saved over settings.ini's.
     auto commit = [&](const Settings& s) {
         auto take = [&](auto m) { if (s.*m != cur.*m) g_saved.*m = s.*m; };
         take(&Settings::iso), take(&Settings::scale), take(&Settings::widescreen), take(&Settings::interpolate);
         take(&Settings::fullscreen), take(&Settings::textures), take(&Settings::mouse_aim), take(&Settings::rumble);
         take(&Settings::mouse_sens), take(&Settings::volume), take(&Settings::bindings), take(&Settings::lang);
+        take(&Settings::deadzone), take(&Settings::textures_off), take(&Settings::setup_done);
         settings_save(settings_path, g_saved);
         apply_settings(win, s, &cur);
         cur = s;
@@ -520,6 +557,9 @@ int main(int argc, char** argv) {
             if (e.type == SDL_CONTROLLERDEVICEADDED && !g_ctrl) g_ctrl = SDL_GameControllerOpen(e.cdevice.which);
             else if (e.type == SDL_KEYDOWN && e.key.keysym.scancode == SDL_SCANCODE_F11 && !e.key.repeat) toggle_fullscreen();
         };
+        env.pad = read_pad;
+        env.pad_name = pad_name;
+        env.rumble = rumble_test;
         if (cur.iso.empty()) cur.iso = iso_default;   // what it finds by itself, for this run
         if (!launcher_run(env, cur)) plat_exit_now(0);
         iso = cur.iso.c_str();
@@ -549,6 +589,7 @@ int main(int argc, char** argv) {
         SDL_SetWindowTitle(win, GCN_GAME_TITLE " (recompiled) - paused");
         ui_show_pause(cur);
         saves_update();
+        settings_pages_update(cur, true);
     };
     auto resume = [&] {
         if (!guest_paused()) return;   // still on its way to stopping
@@ -602,7 +643,20 @@ int main(int argc, char** argv) {
                 args.push_back(nullptr);
                 plat_restart(args.data());
                 fprintf(stderr, "cannot start again: %s\n", strerror(errno));
+            } else if (a == UI_TEST_RUMBLE) rumble_test();
+            else if (a == UI_OPEN_TEXTURES) plat_open_folder(gx::texture_pack_dir());
+            else if (a == UI_PICK_DISC) {
+                // For the next start: this one goes on with the disc it has.
+                const std::string path = ui_pick_disc(ui_tr("Choose your disc image"));
+                if (!path.empty()) {
+                    Settings s = cur;
+                    s.iso = path;
+                    commit(s);
+                    ui_set_settings(cur);
+                    settings_pages_update(cur, true);
+                }
             } else saves_act(a, ui_action_index());
+            if (ui_open()) ui_set_pad(read_pad(), pad_name());
             Settings s = cur;
             if (guest_paused() && ui_take_settings(s)) commit(s);
         }

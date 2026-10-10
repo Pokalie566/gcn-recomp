@@ -45,3 +45,15 @@ body.launcher { decorator: linear-gradient(to bottom right, #10141c 0%, #07080b 
 .message { color: #7fb4ff; }
 button.small { background-color: #ffffff18; }
 button.small:focus { background-color: #4d9bff; color: #06101f; }
+
+.stick { border-color: #ffffff40; background-color: #ffffff08; }
+.stick .dot { background-color: #ffffff; }
+.stick .dot.c { background-color: #f0c040; }
+.chip { background-color: #ffffff14; color: #ffffff80; }
+.chip.on { background-color: #4d9bff; color: #06101f; }
+.trig .track, .track.wide { background-color: #ffffff1c; }
+.trig .fill, .track.wide .fill { background-color: #4d9bff; }
+.setupnav button { background-color: #ffffff18; }
+.setupnav button:focus { background-color: #4d9bff; color: #06101f; }
+.setupnav button.disabled { color: #ffffff44; }
+.setupnav button.disabled:focus { background-color: #ffffff22; color: #ffffff66; }
