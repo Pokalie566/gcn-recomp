@@ -12,6 +12,9 @@
 #include <mutex>
 #include <thread>
 #include <vector>
+#ifdef __APPLE__
+#include <sys/xattr.h>
+#endif
 
 namespace fs = std::filesystem;
 
@@ -215,6 +218,11 @@ bool prepare_game(const char* iso, std::string* module, std::string* err,
     fs::remove_all(final_dir, ec);
     fs::rename(work, final_dir, ec);
     if (ec) { *err = "cannot move the prepared game into place: " + ec.message(); return false; }
+#ifdef __APPLE__
+    // An app downloaded from the web is quarantined, and what it makes may be marked so too;
+    // the module is the player's own, built here, and must load without macOS asking.
+    removexattr(final_path.c_str(), "com.apple.quarantine", 0);
+#endif
     say(1.0f, "ready");
     *module = final_path.string();
     return true;

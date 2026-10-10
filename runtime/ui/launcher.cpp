@@ -236,6 +236,7 @@ bool launcher_run(LauncherEnv& env, Settings& cur) {
                     s.iso = file;
                     env.commit(s);
                     cur = s;
+                    ui_set_settings(cur);   // or the menus, still on the old disc, would put it back
                     g_failed.clear();
                     check(env, cur);
                 }

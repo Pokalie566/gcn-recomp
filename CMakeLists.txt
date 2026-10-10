@@ -17,6 +17,7 @@ option(GCN_BENCH_ONLY "Build only the headless benchmark (no SDL2, no renderer)"
 # See ENTER()/RET() in runtime/recomp.h. ON maintains a guest call stack, which answers
 # "which guest function did that?" and gives a crash dump something to print.
 option(GCN_TRACE_CALLS "Maintain a guest call stack (diagnostics)" OFF)
+option(GCN_APP "Build the game as an app to hand out: no disc, no game code, everything it needs inside (a .app on macOS)" OFF)
 option(GCN_GUEST_CHECKS "Call the game project's consistency checks at every poll, DMA and frame (diagnostics)" OFF)
 
 # gcn_add_game(
@@ -35,6 +36,11 @@ option(GCN_GUEST_CHECKS "Call the game project's consistency checks at every pol
 #                              initializer
 #   [UI <dir>]                 the game's own files for the menus, copied over the
 #                              defaults (runtime/ui/assets): its theme.rcss, typically
+#   [APP_NAME <name>]          with GCN_APP: the app's name (default NAME), which is also
+#                              where it keeps the player's state
+#   [APP_ID <id>]              with GCN_APP: its bundle identifier, e.g. io.github.me.game
+#   [LICENSES <files>...]      with GCN_APP: the game project's licences, shipped with the
+#                              libraries' in the app
 #   [ANDROID_PACKAGE <id>]     e.g. com.example.game. On an Android build, also build the
 #                              headset app (lib<target>.so, a NativeActivity that
 #                              tools/package-apk.ps1 packages) and <target>_egl, the
@@ -42,7 +48,7 @@ option(GCN_GUEST_CHECKS "Call the game project's consistency checks at every pol
 # )
 # The user's image may also be given as -DGAME_ISO=<path>.
 function(gcn_add_game)
-  cmake_parse_arguments(G "" "NAME;TITLE;DISC_ID;DOL_SHA1;SYMBOLS;TABLES;FPS;IMAGE_DIR;UI;ANDROID_PACKAGE" "SOURCES" ${ARGN})
+  cmake_parse_arguments(G "" "NAME;TITLE;DISC_ID;DOL_SHA1;SYMBOLS;TABLES;FPS;IMAGE_DIR;UI;APP_NAME;APP_ID;ANDROID_PACKAGE" "SOURCES;LICENSES" ${ARGN})
   foreach(req NAME TITLE DISC_ID DOL_SHA1 SYMBOLS TABLES FPS)
     if(NOT G_${req})
       message(FATAL_ERROR "gcn_add_game: ${req} is required")
@@ -66,6 +72,10 @@ function(gcn_add_game)
     set(_default_iso "")
   endif()
   set(GAME_ISO "${_default_iso}" CACHE FILEPATH "Your ${G_TITLE} disc image (.iso or .ciso)")
+  # An app is handed out: it is built from no disc and knows of none.
+  if(GCN_APP)
+    set(GAME_ISO "")
+  endif()
 
   # Without an image we can still compile the runtime, which is enough to check a
   # port. Only the recompiled game code and the final link need the disc.
@@ -181,7 +191,8 @@ function(gcn_add_game)
   # so build it from source.
   if(GCN_BENCH_ONLY)
     set(GCN_SDL_TARGET "")
-  elseif(WIN32)
+  elseif(WIN32 OR GCN_APP)
+    # Built here and linked in: an app carries it rather than depending on one installed.
     include(FetchContent)
     set(SDL_SHARED OFF CACHE BOOL "" FORCE)
     set(SDL_STATIC ON CACHE BOOL "" FORCE)
@@ -290,10 +301,16 @@ function(gcn_add_game)
       target_link_libraries(gcn_rmlui_backend PUBLIC "-framework OpenGL")
     endif()
 
-    # The menus' documents beside the executable, as ui/: ours, then the game's over them.
-    set(_ui_copy COMMAND ${CMAKE_COMMAND} -E copy_directory ${RT}/ui/assets $<TARGET_FILE_DIR:${G_NAME}>/ui)
+    # The menus' documents beside the executable, as ui/ (in an app, its Resources/ui):
+    # ours, then the game's over them.
+    if(GCN_APP AND APPLE)
+      set(_ui_dest $<TARGET_BUNDLE_CONTENT_DIR:${G_NAME}>/Resources/ui)
+    else()
+      set(_ui_dest $<TARGET_FILE_DIR:${G_NAME}>/ui)
+    endif()
+    set(_ui_copy COMMAND ${CMAKE_COMMAND} -E copy_directory ${RT}/ui/assets ${_ui_dest})
     if(G_UI)
-      list(APPEND _ui_copy COMMAND ${CMAKE_COMMAND} -E copy_directory ${G_UI} $<TARGET_FILE_DIR:${G_NAME}>/ui)
+      list(APPEND _ui_copy COMMAND ${CMAKE_COMMAND} -E copy_directory ${G_UI} ${_ui_dest})
     endif()
     add_custom_target(${G_NAME}_ui ${_ui_copy} VERBATIM)
   endif()
@@ -313,6 +330,42 @@ function(gcn_add_game)
     endif()
     target_compile_options(${G_NAME} PRIVATE ${GCN_RUNTIME_WARNINGS})
     target_compile_definitions(${G_NAME} PRIVATE ${GCN_GAME_DEFS} ${GCN_GL_DEFS})
+
+    # The macOS app: <APP_NAME>.app, with in Contents/Resources what preparing the game on
+    # the player's machine needs (runtime/prepare.h: the recompiler, the tables, the
+    # symbols, the headers the generated code includes), the menus, and the licences.
+    # main.cpp finds them there, and keeps the player's state in Application Support.
+    if(GCN_APP AND APPLE)
+      if(G_APP_NAME)
+        set(_app ${G_APP_NAME})
+      else()
+        set(_app ${G_NAME})
+      endif()
+      set_target_properties(${G_NAME} PROPERTIES MACOSX_BUNDLE ON OUTPUT_NAME "${_app}"
+        MACOSX_BUNDLE_INFO_PLIST ${RT}/app/Info.plist.in
+        MACOSX_BUNDLE_BUNDLE_NAME "${_app}"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "${G_APP_ID}"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}")
+      set(_res $<TARGET_BUNDLE_CONTENT_DIR:${G_NAME}>/Resources)
+      file(GLOB _recomp_py ${GCN_RECOMP_DIR}/recomp/*.py)
+      set(_game_licenses)
+      if(G_LICENSES)
+        set(_game_licenses COMMAND ${CMAKE_COMMAND} -E copy ${G_LICENSES} ${_res}/licenses/)
+      endif()
+      add_custom_command(TARGET ${G_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory ${_res}/recomp ${_res}/include ${_res}/licenses
+        COMMAND ${CMAKE_COMMAND} -E copy ${_recomp_py} ${_res}/recomp/
+        COMMAND ${CMAKE_COMMAND} -E copy_directory ${G_TABLES} ${_res}/tables
+        COMMAND ${CMAKE_COMMAND} -E copy ${G_SYMBOLS} ${_res}/symbols.txt
+        COMMAND ${CMAKE_COMMAND} -E copy ${RT}/recomp.h ${RT}/compat.h ${_res}/include/
+        COMMAND ${CMAKE_COMMAND} -E copy ${rmlui_SOURCE_DIR}/LICENSE.txt ${_res}/licenses/RmlUi.txt
+        COMMAND ${CMAKE_COMMAND} -E copy ${freetype_SOURCE_DIR}/docs/FTL.TXT ${_res}/licenses/FreeType.txt
+        COMMAND ${CMAKE_COMMAND} -E copy ${sdl2_SOURCE_DIR}/LICENSE.txt ${_res}/licenses/SDL2.txt
+        COMMAND ${CMAKE_COMMAND} -E copy ${RT}/ui/assets/fonts/OFL.txt ${_res}/licenses/FiraSans-OFL.txt
+        ${_game_licenses}
+        VERBATIM)
+    endif()
   endif()
 
   # ---- Android headset app and harness ----

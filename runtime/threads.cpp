@@ -326,6 +326,7 @@ const char* func_name(uint32_t addr);
 void debug_dump_fifo();
 void debug_print_counts();
 void debug_dump_threads() {
+    if (!g_mem) return;   // stopped before the guest had any memory: in the launcher
     debug_dump_fifo();
     if (const char* e = getenv("GCN_PEEK")) {
         std::string s = e;

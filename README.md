@@ -77,6 +77,13 @@ graphics, controls with every pad button rebindable, audio -- and quit. A settin
 there applies at once and is saved. The menus' documents are `runtime/ui/assets`; a game
 project gives them its look with its own `theme.rcss` (gcn_add_game's `UI`).
 
+`-DGCN_APP=ON` builds the game as an app to hand out: no disc and no game code in it, SDL2
+built in, and on macOS a `<APP_NAME>.app` whose Resources hold what preparing the game on
+the player's machine needs. It opens on a launcher (`runtime/ui/launcher.h`) that checks
+everything, prepares the game from the disc the player drops on it, and plays; the player's
+state goes to `~/Library/Application Support/<APP_NAME>`. Built from the same build of the
+game, without `GCN_APP`, the launcher is there too (`--no-launcher` skips it).
+
 The menus use RmlUi (MIT) and FreeType (the FreeType License: portions of this software are
 copyright © The FreeType Project, www.freetype.org), both fetched and built by CMake, and
 the Fira Sans font (SIL Open Font License, `runtime/ui/assets/fonts/OFL.txt`).
