@@ -257,6 +257,10 @@ void load_textures() {
             }
         }
         const bool mips = (mode0 >> 5) & 3;   // a mipmapping min filter
+        static const uint32_t log_frame = getenv("GCN_DRAW_LOG_FRAME") ? (uint32_t)atoi(getenv("GCN_DRAW_LOG_FRAME")) : ~0u;
+        if (g_frames_submitted.load() == log_frame)
+            fprintf(stderr, "[tex] f%u draw %u  map %d  addr %08X  %ux%u  fmt %X  mode0 %06X\n", log_frame, g_draws, m,
+                    (img3 & 0x1FFFFF) << 5, (img0 & 0x3FF) + 1, ((img0 >> 10) & 0x3FF) + 1, fmt, mode0);
         Out()
             .cmd(GX_AURORA_LOAD_TEXOBJ)
             .u8(m)
@@ -449,6 +453,21 @@ uint32_t draw_sig(const Layout& L, const uint8_t* p, uint32_t n) {
     return h | 1;
 }
 
+// GCN_DRAW_LOG: what decides how a draw looks, as the game set it.
+void log_draw_state(uint8_t cmd, uint32_t n) {
+    fprintf(stderr, "[draw] f%u #%u cmd %02X n %u  genmode %06X  zmode %06X  blend %06X  alphacmp %06X  zcomp %06X\n",
+            g_frames_submitted.load(), g_draws, cmd, n, g_bp[0x00], g_bp[0x40], g_bp[0x41], g_bp[0xF3], g_bp[0x43]);
+    const uint32_t stages = ((g_bp[0x00] >> 10) & 0xF) + 1, gens = g_bp[0x00] & 0xF;
+    for (uint32_t i = 0; i < stages; i++)
+        fprintf(stderr, "  tev%u  color %06X alpha %06X  order %06X  ksel %06X\n", i, g_bp[0xC0 + 2 * i], g_bp[0xC1 + 2 * i],
+                g_bp[0x28 + i / 2], g_bp[0xF6 + i / 2]);
+    for (uint32_t i = 0; i < gens; i++) fprintf(stderr, "  texgen%u %08X post %08X\n", i, g_xf[0x1040 + i], g_xf[0x1050 + i]);
+    fprintf(stderr, "  chan ctrl c0 %08X c1 %08X a0 %08X a1 %08X  mat %08X %08X amb %08X %08X  numchans %u\n",
+            g_xf[0x100E], g_xf[0x100F], g_xf[0x1010], g_xf[0x1011], g_xf[0x100C], g_xf[0x100D], g_xf[0x100A], g_xf[0x100B], g_xf[0x1009]);
+    for (int i = 0; i < 4; i++) fprintf(stderr, "  tevreg%d %06X %06X  konst %06X %06X\n", i, g_bp[0xE0 + 2 * i], g_bp[0xE1 + 2 * i], g_bp[0xE0 + 2 * i], g_bp[0xE1 + 2 * i]);
+    fprintf(stderr, "  fog %06X %06X %06X %06X %06X  indirect %06X\n", g_bp[0xEE], g_bp[0xEF], g_bp[0xF0], g_bp[0xF1], g_bp[0xF2], g_bp[0x10]);
+}
+
 // A new frame's width: what was mapped for the old one is sent again.
 void set_wide(float wide) {
     if (wide == g_wide) return;
@@ -507,6 +526,11 @@ void load_bp(uint32_t w) {
         const bool in43 = x > 0 || x + sw < 640;
         const uint32_t wx = (uint32_t)lroundf(wide_x((float)x, in43)), wsw = in43 ? sw : (uint32_t)lroundf(sw * g_wide);
         g_copies++;
+        static const uint32_t log_frame = getenv("GCN_DRAW_LOG_FRAME") ? (uint32_t)atoi(getenv("GCN_DRAW_LOG_FRAME")) : ~0u;
+        if (g_frames_submitted.load() == log_frame)
+            fprintf(stderr, "[copy] f%u after draw %u  src %u,%u %ux%u  trigger %06X  pixfmt %06X  fmt %02X%s  dest %08X  clear %u\n",
+                    log_frame, g_draws, x, y, sw, sh, v, g_bp[0x43], copy_format(v, depth), depth ? " (depth)" : "",
+                    (g_bp[0x4B] & 0x1FFFFF) << 5, (v >> 11) & 1);
         Out().cmd(GX_AURORA_LOAD_COPY_SRC).u32(wx).u32(y).u32(wsw).u32(sh);
         Out().cmd(GX_AURORA_LOAD_COPY_DST).u32(half ? wsw / 2 : wsw).u32(half ? sh / 2 : sh).u32(copy_format(v, depth)).u8(0);
         Out().cmd(GX_AURORA_LOAD_COPY_DEST).u64((uint64_t)phys_ptr((g_bp[0x4B] & 0x1FFFFF) << 5));
@@ -575,6 +599,21 @@ uint32_t parse(const uint8_t* data, uint32_t len, bool partial_ok) {
                 // n - 2, unsigned, and rejects culling both faces.
                 const uint8_t prim = cmd & 0xF8;
                 if (n == 0 || ((prim == 0x98 || prim == 0xA0) && n < 3) || (g_cull_all && prim < 0xA8)) continue;
+                // GCN_DRAW_SKIP=a-b: the frame's draws a to b left out, to find which draws
+                // make something (with GCN_DRAW_LOG=<n>: draw n's state on stderr).
+                static uint32_t skip_lo = ~0u, skip_hi = 0;
+                static const uint32_t log_draw = getenv("GCN_DRAW_LOG") ? (uint32_t)atoi(getenv("GCN_DRAW_LOG")) : ~0u;
+                static const bool skip_parsed = [] {
+                    if (const char* r = getenv("GCN_DRAW_SKIP")) sscanf(r, "%u-%u", &skip_lo, &skip_hi);
+                    return true;
+                }();
+                (void)skip_parsed;
+                static const uint32_t log_frame = getenv("GCN_DRAW_LOG_FRAME") ? (uint32_t)atoi(getenv("GCN_DRAW_LOG_FRAME")) : ~0u;
+                static const bool skip_srtg = getenv("GCN_DRAW_SKIP") && !strcmp(getenv("GCN_DRAW_SKIP"), "srtg");
+                bool srtg = false;   // a colour texgen (GCN_DRAW_LOG_FRAME, GCN_DRAW_SKIP=srtg)
+                for (uint32_t i = 0; i < (g_bp[0x00] & 0xF); i++) srtg |= ((g_xf[0x1040 + i] >> 4) & 7) >= 2;
+                if (g_draws == log_draw || (srtg && g_frames_submitted.load() == log_frame)) log_draw_state(cmd, n);
+                if ((g_draws >= skip_lo && g_draws <= skip_hi) || (srtg && skip_srtg)) { g_draws++; continue; }
                 load_arrays(L, p + 3, n);
                 load_textures();
                 if (g_wide != 1.0f) {

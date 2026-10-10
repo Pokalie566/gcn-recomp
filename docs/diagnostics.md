@@ -186,6 +186,13 @@ black for a shadow and then white in the same frame gets both.)
   `GCN_DRAWLOG_VERBOSE=1` adds each draw's TEV setup (stage orders, colour and alpha
   combiners, konst selectors, the colour registers and konsts, alpha test, Z and blend
   modes) and its first vertices with colours and texture coordinates.
+- On Aurora the bridge has its own (`gx/aurora_bridge.cpp`): `GCN_DRAW_SKIP=a-b` drops
+  draws a to b of every frame (`srtg`: the draws with a colour texgen); `GCN_DRAW_LOG=<n>`
+  prints draw n's state (gen mode, Z, blend, alpha test, TEV stages, texgens, channels,
+  fog); `GCN_DRAW_LOG_FRAME=<frame>` prints, for that frame, its colour-texgen draws, its EFB
+  copies (rect, format, destination) and every texture it loads (address, size, format), so
+  a copy can be followed to the draws that sample it. Frame numbers are the bridge's
+  (`g_frames_submitted`): one less than the dump's.
 - `GCN_MTXLOG=<frame>` prints the position matrix and projection of every draw in that frame;
   `GCN_PNMLOG=a-b` lists the position matrices used over a window of frames.
 - `GCN_WATCH=a,b,c` (with `GCN_MTXLOG` set) prints those guest addresses every frame;
