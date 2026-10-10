@@ -2,8 +2,8 @@
 
 A toolkit for static recompilation of Nintendo GameCube games to native code: a Gekko
 PowerPC → C recompiler, and a runtime that stands in for the GameCube hardware (CPU helpers,
-OS context switching, graphics through an OpenGL GX pipeline, audio, DVD, controllers,
-memory card) with an SDL desktop frontend.
+OS context switching, graphics through Aurora's GX on WebGPU, audio, DVD, controllers,
+memory card) with an SDL3 desktop frontend.
 
 It is the common layer under per-game projects, each of which supplies its own game's
 layout and steering files and nothing else:
@@ -36,11 +36,7 @@ gcn_add_game(
 That defines the game executable and a headless benchmark (`<name>_bench`). Neither executable holds any game code, and both build without a
 disc: they load the recompiled game as a module, `<name>_game` (`runtime/game_module.h`),
 which the build makes beside them when it has a disc image, and which they otherwise
-prepare from the player's disc on first run (`runtime/prepare.h`). With `ANDROID_PACKAGE <id>`, an Android build (the NDK's toolchain
-file, `-DGCN_BENCH_ONLY=ON`) also builds the headset app, `lib<name>.so`, which
-`tools/package-apk.ps1` turns into an APK, and `<name>_egl`, the renderer headless on a
-device. A game tells those what it knows -- when to show stereo, how big its world is --
-through `vr::GameHooks` (`runtime/vr_game.h`) in its `SOURCES`.
+prepare from the player's disc on first run (`runtime/prepare.h`).
 The game project provides:
 
 - `analysis/symbols.txt` — the DOL's function layout in decomp-toolkit's format, either
@@ -62,9 +58,9 @@ configured with. Options for the player:
 | Option | |
 |---|---|
 | `--widescreen` | a 16:9 frame; the game project widens its camera (docs/graphics.md, *Widescreen*) |
-| `--interpolate` | a 30 fps game shown at 60, an in-between frame drawn between two of its own (*Frame interpolation*) |
+| `--interpolate` | a 30 fps game shown at 60, an in-between frame drawn between two of its own (*Aurora*) |
 | `--mouse-aim` | the mouse drives the C stick, its buttons the triggers (`runtime/mouse_aim.h`) |
-| `--scale=N` | internal resolution, N times the console's (default 2) |
+| `--scale=N` | internal resolution, N times the console's (default 1) |
 | `--fullscreen` | fullscreen; F11 switches |
 | `--dump-textures` | write every texture the game uses to `textures_dump/<game id>/`, named for a pack |
 
@@ -112,17 +108,14 @@ the stick's y instead) -- which the environment variables of the same names over
   and verifies the DOL.
 - `runtime/`: the GameCube in software. `recomp.h` is the contract with generated code.
   `cpu.cpp`, `threads.cpp` and `hle_os.cpp` are the CPU and OS; `hw/` the hardware
-  registers; `gx/` the graphics pipeline; `main.cpp` the SDL frontend and `bench_main.cpp`
-  the benchmark.
-- `android/`: the headset frontends. `openxr_main.cpp` is the OpenXR app (the game on a
-  theater panel or in stereo, Touch controllers as the pad), `egl_main.cpp` the headless
-  harness and `audio_aaudio.cpp` the audio device. The `vr.txt` settings
-  (`runtime/vr_config.*`) and what a game tells the headset (`runtime/vr_game.h`) are in the
-  runtime, so the desktop can check a game's hooks too.
-- `tools/package-apk.ps1`: packages the app into an APK without Gradle, and installs it.
+  registers; `gx/` the GX stream translated for Aurora and its GPU side; `main.cpp` the
+  frontend (Aurora, SDL3, the menus) and `bench_main.cpp` the benchmark.
+- `patches/`: fixes to Aurora not yet upstream, applied to its pinned commit at configure
+  time.
 - `docs/`: working notes on diagnostics and the renderer.
 
 ## Requirements
 
-CMake 3.20+, Ninja, Python 3, a C++20 compiler, SDL2 (via pkg-config; built from source on
-Windows). On macOS: `brew install cmake ninja sdl2 python`.
+CMake 3.20+, Ninja, Python 3, a C++20 compiler. Aurora, SDL3 and Dawn (prebuilt) are
+fetched and built by CMake; on Linux SDL3 needs the X11/Wayland/audio development
+packages (the list is in lm-recomp's CI). On macOS: `brew install cmake ninja python`.

@@ -1,7 +1,7 @@
 // Scripted controller input. See input_script.h.
 #include "input_script.h"
 #include "runtime.h"
-#include "gx/render.h"
+#include "gx/aurora_bridge.h"
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>

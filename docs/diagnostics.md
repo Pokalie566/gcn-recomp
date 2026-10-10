@@ -92,50 +92,13 @@ a log.
 
 ## Frame dumps
 
-`--hidden --dump-dir=DIR --dump-every=N` runs with the window hidden and writes every Nth
-presented frame as a PNG. `GCN_DUMP_RANGE=a-b` restricts that to a window of frames.
-`--headless` runs the guest with no renderer at all.
-
+`--dump-dir=DIR --dump-every=N` writes every Nth presented frame as a PNG, read back from
+Aurora's framebuffer. `GCN_DUMP_RANGE=a-b` restricts that to a window of frames.
+`--headless` runs the guest with no window and no GPU at all, the stream dropped.
 
 With `--interpolate`, an in-between frame is dumped as `frame_NNNNN_i.png`, before frame
-NNNNN; `GCN_INTERPOLATE=force` makes one for every frame of an unpaced run. See
-graphics.md, "Frame interpolation".
-
-## The eye preview
-
-`--eye` renders through the stereo path into an offscreen target and shows that in the
-window instead of the flat frame: the eye sits where the game's camera is, looking straight
-ahead with a 90 degree field, so a change to the VR renderer can be looked at on a desktop
-before it goes near a headset. `--first-person` puts the eye wherever the game project's eye
-hook says (`render_set_eye_hook` in `runtime/gx/render_gl.h`: the renderer asks the game, per
-frame, for a view transform and the draws to leave out, and a game without a hook keeps the
-chase camera). With `--dump-dir`/`--dump-every` the eye's frames are written as `eye_NNNNN.png`.
-
-## On a headset
-
-A game built with `ANDROID_PACKAGE` has two device-side tools besides the app.
-
-`<game>_egl` is the GL ES renderer on a headless EGL pbuffer, run over `adb shell` from a
-directory holding the image (`game.iso` or `game.ciso`). `--dump-dir`/`--dump-every`,
-`--seconds=N`, `--frames=N` and `--scale=N` work as on the desktop. `--eye` renders through
-the stereo path instead, with the VR settings the headset uses (the game's defaults, then
-`./vr.txt` if present): `--eyes=2` renders both eyes, `--eye-size=WxH` and `--msaa=N` match
-the headset's target, `--eye-yaw=deg`/`--eye-pitch=deg` turn the head (dump at two yaws:
-anything that does not move is head-locked), and `--first-person` with `--fp-window=a-b`
-calls the game's `set_first_person` hook. `GCN_EYE_GPU=1` times the eye passes,
-`GCN_EYE_MORPH=0,0.5,1` dumps the theater/stereo morph at those points beside the flat
-frame, and `GCN_STEREOLOG=1` prints the game's `wants_stereo` answer whenever it changes.
-The desktop build honours `GCN_STEREOLOG` too, numbering frames as its dumps are, so a
-game's stereo hook can be checked against a replayed route without a device.
-`GCN_RAMSNAP=<dir>` (with `GCN_RAMSNAP_EVERY`, `GCN_RAMSNAP_RANGE=a-b`) writes the low 8 MB
-of guest RAM beside the frames, for finding the state such a hook reads. The desktop build
-honours it too, numbering snapshots as its frame dumps are.
-
-The app has no environment of its own, so `gcn_env.txt` in its files directory
-(`/sdcard/Android/data/<package>/files/`), one `KEY=VALUE` per line, is put into it before
-the runtime starts; `gcn_input.txt` there holds a `GCN_INPUT` script, and `GCN_REPLAY=<dir>`
-in the env file replays an input log relative to that directory. Its log is
-`adb logcat -s <game>`, with compositor and game frame counts every five seconds.
+NNNNN; `GCN_INTERPOLATE=force` makes one for every frame of an unpaced run, and
+`GCN_INTERPLOG=1` prints each frame's verdict. See graphics.md, "Aurora".
 
 ## Measuring the guest
 
@@ -143,6 +106,10 @@ in the env file replays an input log relative to that directory. Its log is
 the guest advances; `--warmup=N` (default 8) excludes boot from the steady-state figure. Its
 last column is the guest's work per presented frame in loop back-edges, the figure the
 virtual clock's tick-per-edge constant is tuned against.
+
+`GCN_RAMSNAP=<dir>` (with `GCN_RAMSNAP_EVERY`, `GCN_RAMSNAP_RANGE=a-b`) writes the low 8 MB
+of guest RAM every so many presented frames, numbered as the frame dumps are: diffing two
+snapshots taken in known game states is how a game variable gets found.
 
 ## The clock
 
@@ -161,43 +128,19 @@ at a threshold set by the constant rather than by the real console.
 the game, and the benchmark's default). `GCN_CLOCKLOG=1` prints once per virtual second how
 virtual and host time compare and the work per presented frame.
 
-`GCN_FRAMETIME=1` prints a line per frame from each thread: the guest's interval between
-presents and how much of it the GX front end took, the batch's shape, and the renderer's
-time to issue it.
-
-## Textures
-
-`GCN_TEXLOG=1` prints a line per decoded texture: frame, id, guest address, format, size and
-how many top-level texels are not black -- which tells a texture the game never wrote (all
-zero) from one the shader mishandles. For an indexed texture it adds the palette entries the
-texels use, decoded, and which palette variant this is. `GCN_TEXDUMP=<dir>` writes each
-texture's top level as `<dir>/tex_<id>.png`, alpha forced opaque.
-
-The texture cache checks a texture's texels once per frame, assuming a game does not rewrite
-a texture between two draws of one frame. `GCN_TEXHASH_ALWAYS=1` checks on every lookup; if
-an artifact goes away under it, the game is doing exactly that. (Palettes are not subject to
-this: an indexed texture is decoded once per distinct palette its texels see, so a font drawn
-black for a shadow and then white in the same frame gets both.)
+`GCN_FRAMETIME=1` prints a line per frame from the GX bridge: the guest's time for the
+frame, its draws, vertex bytes and EFB copies, and how long it waited on the GPU side.
 
 ## Finding a draw or a function
 
-- `GCN_DRAWLOG=<frame>` lists every draw in one frame with its index; `GCN_DRAW_SKIP=a-b`
-  then drops a range of them, to attribute a piece of the image to the draws that made it.
-  `GCN_DRAWLOG_VERBOSE=1` adds each draw's TEV setup (stage orders, colour and alpha
-  combiners, konst selectors, the colour registers and konsts, alpha test, Z and blend
-  modes) and its first vertices with colours and texture coordinates.
-- On Aurora the bridge has its own (`gx/aurora_bridge.cpp`): `GCN_DRAW_SKIP=a-b` drops
+- The GX bridge (`gx/aurora_bridge.cpp`): `GCN_DRAW_SKIP=a-b` drops
   draws a to b of every frame (`srtg`: the draws with a colour texgen); `GCN_DRAW_LOG=<n>`
   prints draw n's state (gen mode, Z, blend, alpha test, TEV stages, texgens, channels,
   fog); `GCN_DRAW_LOG_FRAME=<frame>` prints, for that frame, its colour-texgen draws, its EFB
   copies (rect, format, destination) and every texture it loads (address, size, format), so
   a copy can be followed to the draws that sample it. Frame numbers are the bridge's
   (`g_frames_submitted`): one less than the dump's.
-- `GCN_MTXLOG=<frame>` prints the position matrix and projection of every draw in that frame;
-  `GCN_PNMLOG=a-b` lists the position matrices used over a window of frames.
-- `GCN_WATCH=a,b,c` (with `GCN_MTXLOG` set) prints those guest addresses every frame;
-  `GCN_PEEK=a,b` prints them in the crash dump.
-- `GCN_COPYLOG=1` logs EFB copies; `GCN_GXSTATS=1` prints per-frame GX counts.
+- `GCN_PEEK=a,b` prints those guest addresses in the crash dump.
 - `--sample` reports once a second which guest functions each guest thread is in, by
   walking the guest's own stack; names come from the game's `symbols.txt`.
 - Build with `-DGCN_TRACE_CALLS=ON` to keep a real guest call stack, printed by the crash

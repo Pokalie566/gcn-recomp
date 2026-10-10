@@ -1,11 +1,10 @@
 // Headless benchmark harness: runs the recompiled game with no graphics, audio or
 // input and reports how fast the guest actually advances.
 //
-// This exists to compare host CPUs on equal terms. The renderer and the SDL frontend
-// are left out of this target entirely (see CMakeLists), so it builds and runs
-// anywhere the recompiled code builds -- including an Android/arm64 device over adb,
-// which is how we judge whether a standalone headset build could sustain the game's
-// frame rate before committing to an OpenGL ES port.
+// This exists to compare host CPUs on equal terms. The GPU side and the SDL frontend are
+// left out of this target entirely (see CMakeLists): the GX stream, translated for Aurora
+// as the game would send it (gx/aurora_bridge.h), is taken and dropped, so it builds and
+// runs anywhere the recompiled code builds.
 //
 // Usage: prime_bench [--seconds=N] [--warmup=N] [path/to/game.iso]
 //
@@ -15,7 +14,7 @@
 #include "runtime.h"
 #include "prepare.h"
 #include "platform.h"
-#include "gx/render.h"
+#include "gx/aurora_bridge.h"
 #include "input_script.h"
 #include "hw/dtk.h"
 #include "hw/pad.h"
@@ -81,7 +80,7 @@ int main(int argc, char** argv) {
     threads_start_boot(entry);
 
     printf("benchmarking %s for %d s\n", iso.c_str(), seconds);
-    printf("  time   frames/s   verts/s   draws/s   edges/frame\n");
+    printf("  time   frames/s   GX KB/s   edges/frame\n");
     fflush(stdout);
 
     using clock = std::chrono::steady_clock;
@@ -89,25 +88,24 @@ int main(int argc, char** argv) {
     auto t_mark = t_start;
     uint32_t frames_at_mark = 0;
     uint64_t edges_at_mark = 0;
-    uint64_t verts = 0, verts_at_mark = 0;
-    uint64_t draws = 0, draws_at_mark = 0;
+    uint64_t bytes = 0, bytes_at_mark = 0;   // of the GX stream
 
     // Steady-state accounting begins once warmup has elapsed.
     bool warmed = false;
     double t_warmed = 0;
     uint32_t frames_warmed = 0;
-    uint64_t verts_warmed = 0;
+    uint64_t bytes_warmed = 0;
 
     for (;;) {
         // Keep a controller plugged in so the game doesn't sit in a "please connect"
-        // state, and drain batches so the guest never blocks on a renderer.
+        // state, and drain the stream so the guest never blocks on a GPU.
         PadState p;
         p.connected = true;
         pad_set_state(0, p);
 
-        if (auto b = gx::take_batch(5)) {
-            verts += b->verts.size();
-            draws += b->cmds.size();
+        if (gx::Chunk c; gx::take_chunk(c, 5)) {
+            bytes += c.bytes.size();
+            gx::chunk_done(c.seq);
         }
 
         const auto now = clock::now();
@@ -118,23 +116,21 @@ int main(int argc, char** argv) {
             warmed = true;
             t_warmed = elapsed;
             frames_warmed = gx::g_frames_submitted.load();
-            verts_warmed = verts;
+            bytes_warmed = bytes;
         }
 
         if (since_mark >= 1.0) {
             const uint32_t frames = gx::g_frames_submitted.load();
             const uint64_t edges = g_vcount;
-            printf("  %4.0fs   %8.1f   %7.0fk   %7.0f   %8.0fk%s\n", elapsed,
+            printf("  %4.0fs   %8.1f   %7.0f   %8.0fk%s\n", elapsed,
                    (frames - frames_at_mark) / since_mark,
-                   (verts - verts_at_mark) / since_mark / 1000.0,
-                   (draws - draws_at_mark) / since_mark,
+                   (bytes - bytes_at_mark) / since_mark / 1024.0,
                    frames > frames_at_mark ? (double)(edges - edges_at_mark) / (frames - frames_at_mark) / 1000.0 : 0.0,
                    warmed ? "" : "   (warmup)");
             fflush(stdout);
             edges_at_mark = edges;
             frames_at_mark = frames;
-            verts_at_mark = verts;
-            draws_at_mark = draws;
+            bytes_at_mark = bytes;
             t_mark = now;
         }
         if (elapsed >= seconds) break;
@@ -148,7 +144,7 @@ int main(int argc, char** argv) {
         const double fps = (frames - frames_warmed) / sd;
         printf("steady state: %u frames in %.1f s = %.2f fps = %.0f%% of the game's %d fps\n",
                frames - frames_warmed, sd, fps, 100.0 * fps / (double)GCN_GAME_FPS, (int)GCN_GAME_FPS);
-        printf("              %.0fk vertices/s\n", (verts - verts_warmed) / sd / 1000.0);
+        printf("              %.0f KB/s of GX stream\n", (bytes - bytes_warmed) / sd / 1024.0);
     } else {
         printf("steady state: not measured (warmup %ds was not shorter than the %ds run)\n",
                warmup, seconds);

@@ -10,10 +10,10 @@ function(_gcn_set_standards target)
   set_target_properties(${target} PROPERTIES C_STANDARD 11 CXX_STANDARD 20 CXX_STANDARD_REQUIRED ON)
 endfunction()
 
-# GCN_BENCH_ONLY builds just the headless benchmark: no renderer, no SDL2, no GL. That
-# is what a cross-build for a device uses, since it only needs a C++ toolchain and the
-# recompiled code.
-option(GCN_BENCH_ONLY "Build only the headless benchmark (no SDL2, no renderer)" OFF)
+# GCN_BENCH_ONLY builds just the headless benchmark: no GPU side, no SDL. That is what a
+# cross-build for a device uses, since it only needs a C++ toolchain and the recompiled
+# code (and Aurora's headers, for the stream it would be sent).
+option(GCN_BENCH_ONLY "Build only the headless benchmark (no SDL, no GPU)" OFF)
 # See ENTER()/RET() in runtime/recomp.h. ON maintains a guest call stack, which answers
 # "which guest function did that?" and gives a crash dump something to print.
 option(GCN_TRACE_CALLS "Maintain a guest call stack (diagnostics)" OFF)
@@ -30,9 +30,8 @@ option(GCN_GUEST_CHECKS "Call the game project's consistency checks at every pol
 #   FPS <n>                    the game's frame rate, for the benchmark's percentage
 #   [IMAGE_DIR <dir>]          where to look for the user's .iso/.ciso (default rom/)
 #   [SOURCES <files>...]       the game project's own runtime sources, compiled into the
-#                              game executable and the headset app: hooks the runtime
-#                              offers a game (render_set_eye_hook in runtime/gx/render_gl.h,
-#                              vr::GameHooks in runtime/vr_game.h), installed from a static
+#                              game executable: hooks the runtime offers a game (an HLE,
+#                              g_widescreen in runtime/runtime.h), installed from a static
 #                              initializer
 #   [UI <dir>]                 the game's own files for the menus, copied over the
 #                              defaults (runtime/ui/assets): its theme.rcss, typically
@@ -43,14 +42,10 @@ option(GCN_GUEST_CHECKS "Call the game project's consistency checks at every pol
 #                              libraries' in the app
 #   [APP_ICON <path>]          its icon, without extension: <path>.icns (the macOS app),
 #                              .ico (the Windows executable), .png (the window, elsewhere)
-#   [ANDROID_PACKAGE <id>]     e.g. com.example.game. On an Android build, also build the
-#                              headset app (lib<target>.so, a NativeActivity that
-#                              tools/package-apk.ps1 packages) and <target>_egl, the
-#                              renderer headless on a device; see android/
 # )
 # The user's image may also be given as -DGAME_ISO=<path>.
 function(gcn_add_game)
-  cmake_parse_arguments(G "" "NAME;TITLE;DISC_ID;DOL_SHA1;SYMBOLS;TABLES;FPS;IMAGE_DIR;UI;APP_NAME;APP_ID;APP_ICON;ANDROID_PACKAGE" "SOURCES;LICENSES" ${ARGN})
+  cmake_parse_arguments(G "" "NAME;TITLE;DISC_ID;DOL_SHA1;SYMBOLS;TABLES;FPS;IMAGE_DIR;UI;APP_NAME;APP_ID;APP_ICON" "SOURCES;LICENSES" ${ARGN})
   foreach(req NAME TITLE DISC_ID DOL_SHA1 SYMBOLS TABLES FPS)
     if(NOT G_${req})
       message(FATAL_ERROR "gcn_add_game: ${req} is required")
@@ -168,54 +163,26 @@ function(gcn_add_game)
   # target that already has main.cpp or audio.cpp.
   list(REMOVE_ITEM RUNTIME_SOURCES ${RT}/bench_main.cpp ${RT}/audio_stub.cpp)
 
-  # The game draws through Aurora (gx/aurora_bridge.h, aurora_gpu.h); the OpenGL renderer
-  # and the front end it was fed by are left out of it.
-  set(GL_FRONTEND_SOURCES ${RT}/gx/render_gl.cpp ${RT}/gx/gl_load.cpp ${RT}/gx/shadergen.cpp ${RT}/gx/cmd.cpp
-    ${RT}/gx/xf.cpp ${RT}/gx/texture.cpp ${RT}/gx/texture_pack.cpp ${RT}/gx/interp.cpp)
-  set(AURORA_SOURCES ${RT}/gx/aurora_bridge.cpp ${RT}/gx/aurora_gpu.cpp ${RT}/gx/aurora_interp.cpp ${RT}/gx/packs.cpp)
-  set(GAME_SOURCES ${RUNTIME_SOURCES})
-  list(REMOVE_ITEM GAME_SOURCES ${GL_FRONTEND_SOURCES})
-
-  # Everything below the renderer and the SDL frontend -- the CPU, OS, hardware and GX
-  # front end, including the batch queue in gx/xf.cpp -- is free of both GL and SDL.
+  # Everything below the GPU side and the SDL frontend -- the CPU, OS, hardware and the GX
+  # stream translated for Aurora (gx/aurora_bridge.cpp, which never calls it) -- is free of
+  # both the GPU and SDL.
   set(CORE_SOURCES ${RUNTIME_SOURCES})
-  list(REMOVE_ITEM CORE_SOURCES
-    ${RT}/main.cpp ${RT}/audio.cpp ${RT}/audio_sdl.cpp ${RT}/png.cpp
-    ${RT}/gx/render_gl.cpp ${RT}/gx/gl_load.cpp ${RT}/gx/shadergen.cpp ${AURORA_SOURCES})
+  list(REMOVE_ITEM CORE_SOURCES ${RT}/main.cpp ${RT}/audio.cpp ${RT}/audio_sdl.cpp ${RT}/png.cpp
+    ${RT}/gx/aurora_gpu.cpp ${RT}/gx/packs.cpp)
   list(FILTER CORE_SOURCES EXCLUDE REGEX "/runtime/ui/")
   list(APPEND CORE_SOURCES ${RT}/audio_stub.cpp)
   set(BENCH_SOURCES ${CORE_SOURCES} ${RT}/bench_main.cpp)
-
-  # Render target: desktop OpenGL 3.3 core, or OpenGL ES 3.2 for Android and standalone
-  # headsets. One renderer source serves both; see runtime/gx/gl.h. GL entry points are
-  # resolved at runtime via a vendored glad loader; macOS links the system framework
-  # directly and needs neither.
-  if(ANDROID)
-    set(_gcn_gl_es_default ON)
-  else()
-    set(_gcn_gl_es_default OFF)
-  endif()
-  option(GCN_GL_ES "Target OpenGL ES 3.2 instead of desktop OpenGL 3.3 core" ${_gcn_gl_es_default})
-  if(GCN_GL_ES)
-    set(GLAD_INCLUDE_DIR ${RT}/gx/glad_es/include)
-    set(GLAD_SOURCE ${RT}/gx/glad_es/src/gles2.c)
-    set(GCN_GL_DEFS GCN_GL_ES)
-  else()
-    set(GLAD_INCLUDE_DIR ${RT}/gx/glad/include)
-    set(GLAD_SOURCE ${RT}/gx/glad/src/gl.c)
-    set(GCN_GL_DEFS "")
-  endif()
-  if(NOT APPLE)
-    list(APPEND RUNTIME_SOURCES ${GLAD_SOURCE})
-  endif()
 
   # Aurora (github.com/encounter/aurora, MIT): the window, input and SDL3, the GPU through
   # WebGPU (Dawn, prebuilt: Metal, D3D12, Vulkan) and its GX command processor, and RmlUi for
   # the menus. Only the modules the game uses are built: the game's own SDK runs recompiled,
   # so Aurora's DVD, CARD, THP and the rest are not wanted. A few fixes not yet upstream are
-  # patches/aurora-*.patch, applied from the pinned commit each time.
-  if(NOT GCN_BENCH_ONLY)
-    include(FetchContent)
+  # patches/aurora-*.patch, applied from the pinned commit each time. The benchmark only
+  # takes the headers of its command stream (GCN_BENCH_ONLY: nothing of it is built).
+  include(FetchContent)
+  if(GCN_BENCH_ONLY)
+    set(_aurora_build SOURCE_SUBDIR none)
+  else()
     set(AURORA_ENABLE_RMLUI ON CACHE BOOL "" FORCE)
     set(AURORA_ENABLE_DVD OFF CACHE BOOL "" FORCE)
     set(AURORA_ENABLE_CARD OFF CACHE BOOL "" FORCE)
@@ -236,16 +203,17 @@ function(gcn_add_game)
         set(CMAKE_IGNORE_PREFIX_PATH /opt/homebrew /usr/local)
       endif()
     endif()
-    FetchContent_Declare(aurora
-      GIT_REPOSITORY https://github.com/encounter/aurora.git
-      GIT_TAG 40cf48fce6ce85366608596bae018c6188f2b2e7   # 2026-10-09
-      PATCH_COMMAND git checkout -q -- . && git apply --ignore-whitespace
-                    ${GCN_RECOMP_DIR}/patches/aurora-srtg-lit-color.patch
-                    ${GCN_RECOMP_DIR}/patches/aurora-blocking-pipelines.patch
-                    ${GCN_RECOMP_DIR}/patches/aurora-rmlui-hooks.patch
-      EXCLUDE_FROM_ALL)
-    FetchContent_MakeAvailable(aurora)
   endif()
+  FetchContent_Declare(aurora
+    GIT_REPOSITORY https://github.com/encounter/aurora.git
+    GIT_TAG 40cf48fce6ce85366608596bae018c6188f2b2e7   # 2026-10-09
+    PATCH_COMMAND git checkout -q -- . && git apply --ignore-whitespace
+                  ${GCN_RECOMP_DIR}/patches/aurora-srtg-lit-color.patch
+                  ${GCN_RECOMP_DIR}/patches/aurora-blocking-pipelines.patch
+                  ${GCN_RECOMP_DIR}/patches/aurora-rmlui-hooks.patch
+    ${_aurora_build}
+    EXCLUDE_FROM_ALL)
+  FetchContent_MakeAvailable(aurora)
 
   # nod (github.com/encounter/nod, MIT): reads every disc image format -- iso, ciso, gcz,
   # rvz, wia, wbfs, nfs, tgc, nkit -- under runtime/disc.cpp. Its prebuilt static libraries,
@@ -348,7 +316,7 @@ function(gcn_add_game)
   # Like the game, it holds no game code: it loads the module (runtime/game_module.h).
   add_executable(${G_NAME}_bench ${BENCH_SOURCES})
   _gcn_set_standards(${G_NAME}_bench)
-  target_include_directories(${G_NAME}_bench PRIVATE ${RT} ${RECOMP_GEN_DIR})
+  target_include_directories(${G_NAME}_bench PRIVATE ${RT} ${RECOMP_GEN_DIR} ${aurora_SOURCE_DIR}/include)
   target_link_libraries(${G_NAME}_bench PRIVATE gcn_nod ${CMAKE_DL_LIBS})
   set_target_properties(${G_NAME}_bench PROPERTIES ENABLE_EXPORTS ON)
   if(TARGET ${G_NAME}_game)
@@ -384,7 +352,7 @@ function(gcn_add_game)
   # is a module it loads (runtime/game_module.h) -- so it builds without a disc image. Its
   # symbols are exported for the module to call.
   if(NOT GCN_BENCH_ONLY)
-    add_executable(${G_NAME} ${GAME_SOURCES} ${G_SOURCES})
+    add_executable(${G_NAME} ${RUNTIME_SOURCES} ${G_SOURCES})
     _gcn_set_standards(${G_NAME})
     target_include_directories(${G_NAME} PRIVATE ${RT} ${aurora_SOURCE_DIR}/lib)
     target_link_libraries(${G_NAME} PRIVATE aurora::core aurora::gx aurora::vi gcn_nod ${GCN_PLATFORM_LIBS} ${CMAKE_DL_LIBS})
@@ -484,77 +452,16 @@ function(gcn_add_game)
     endif()
   endif()
 
-  # ---- Android headset app and harness ----
-  # Built from the same pieces as everything else, with the real audio mix and an AAudio
-  # device in place of the stub, and the game's own sources. The OpenXR loader comes from
-  # Khronos' official Android AAR on Maven Central: it carries both the headers and a
-  # prebuilt libopenxr_loader.so, so nothing has to be committed as a binary.
-  if(ANDROID AND HAVE_GAME_ISO AND G_ANDROID_PACKAGE)
-    set(AND_DIR ${GCN_RECOMP_DIR}/android)
-    set(ANDROID_SOURCES ${CORE_SOURCES} ${RT}/audio.cpp ${AND_DIR}/audio_aaudio.cpp
-      ${RT}/gx/render_gl.cpp ${RT}/gx/shadergen.cpp ${RT}/gx/gl_load.cpp ${RT}/png.cpp
-      ${GLAD_SOURCE} ${G_SOURCES})
-    list(REMOVE_ITEM ANDROID_SOURCES ${RT}/audio_stub.cpp)
-    set(ANDROID_DEFS ${GCN_GAME_DEFS} ${GCN_GL_DEFS} GCN_LOG_TAG="${G_NAME}" GCN_STATIC_GAME)
-
-    # Headless EGL frontend: the real renderer, offscreen, writing frames as PNGs. Not an
-    # APK: it validates the GL ES renderer on a device over adb, and shows the stereo path
-    # without anyone wearing the headset.
-    add_executable(${G_NAME}_egl ${ANDROID_SOURCES} ${AND_DIR}/egl_main.cpp)
-    _gcn_set_standards(${G_NAME}_egl)
-    target_include_directories(${G_NAME}_egl PRIVATE ${AND_DIR} ${RT} ${RECOMP_GEN_DIR} ${GLAD_INCLUDE_DIR})
-    target_link_libraries(${G_NAME}_egl PRIVATE game_recomp EGL log aaudio)
-    target_compile_options(${G_NAME}_egl PRIVATE ${GCN_RUNTIME_WARNINGS})
-    target_compile_definitions(${G_NAME}_egl PRIVATE ${ANDROID_DEFS})
-
-    include(FetchContent)
-    FetchContent_Declare(openxr_aar
-      URL https://repo1.maven.org/maven2/org/khronos/openxr/openxr_loader_for_android/1.1.63/openxr_loader_for_android-1.1.63.aar
-      URL_HASH SHA256=622419d2f6741c3443a3beb4779af0764318edd01830de967f24c741ebcded73
-      DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
-    FetchContent_MakeAvailable(openxr_aar)
-    set(OPENXR_INCLUDE ${openxr_aar_SOURCE_DIR}/prefab/modules/headers/include)
-    set(OPENXR_LIB ${openxr_aar_SOURCE_DIR}/prefab/modules/openxr_loader/libs/android.${ANDROID_ABI}/libopenxr_loader.so)
-
-    add_library(native_app_glue STATIC
-      ${ANDROID_NDK}/sources/android/native_app_glue/android_native_app_glue.c)
-    target_include_directories(native_app_glue PUBLIC
-      ${ANDROID_NDK}/sources/android/native_app_glue)
-
-    # The installable app: android.app.NativeActivity loads lib<name>.so and calls
-    # android_main(), so there is no Java source at all. The library name must match the
-    # manifest's android.app.lib_name, which the template below fills in.
-    add_library(${G_NAME} SHARED ${ANDROID_SOURCES} ${AND_DIR}/openxr_main.cpp)
-    _gcn_set_standards(${G_NAME})
-    target_include_directories(${G_NAME} PRIVATE ${AND_DIR} ${RT} ${RECOMP_GEN_DIR} ${GLAD_INCLUDE_DIR} ${OPENXR_INCLUDE})
-    target_link_libraries(${G_NAME} PRIVATE game_recomp native_app_glue ${OPENXR_LIB} EGL android log aaudio)
-    target_compile_options(${G_NAME} PRIVATE ${GCN_RUNTIME_WARNINGS})
-    # No default image: the app finds game.iso or game.ciso in its own files directory.
-    set(APP_DEFS ${ANDROID_DEFS})
-    list(FILTER APP_DEFS EXCLUDE REGEX "^GCN_DEFAULT_ISO=")
-    target_compile_definitions(${G_NAME} PRIVATE ${APP_DEFS} GCN_DEFAULT_ISO="")
-    # NativeActivity resolves this symbol by name; without it the linker drops the glue.
-    target_link_options(${G_NAME} PRIVATE -u ANativeActivity_onCreate)
-
-    configure_file(${AND_DIR}/AndroidManifest.xml.in ${CMAKE_BINARY_DIR}/AndroidManifest.xml @ONLY)
-  endif()
-
-  # For a game project that adds frontends of its own -- a headset app, a headless harness
-  # on a device -- the pieces such a target is assembled from. GCN_CORE_SOURCES is the
-  # guest and the hardware with no renderer, no SDL and the silent audio stub;
-  # GCN_AUDIO_SOURCES is the real mix (a frontend adds its own device backend);
-  # GCN_RENDER_SOURCES is the GL renderer. Every target also needs ${GCN_GLAD_SOURCE} off
-  # Apple, the include directories GCN_RT, GCN_GEN_DIR and GCN_GLAD_INCLUDE_DIR, and the
-  # definitions GCN_GAME_DEFS and GCN_GL_DEFS; it links game_recomp.
+  # For a game project that adds targets of its own, the pieces such a target is assembled
+  # from. GCN_CORE_SOURCES is the guest, the hardware and the GX stream with no GPU, no SDL
+  # and the silent audio stub; GCN_AUDIO_SOURCES is the real mix (a frontend adds its own
+  # device backend). Every target also needs the include directories GCN_RT and
+  # GCN_GEN_DIR and the definitions GCN_GAME_DEFS.
   set(GCN_RT ${RT} PARENT_SCOPE)
   set(GCN_GEN_DIR ${RECOMP_GEN_DIR} PARENT_SCOPE)
   set(GCN_HAVE_GAME_ISO ${HAVE_GAME_ISO} PARENT_SCOPE)
   set(GCN_CORE_SOURCES ${CORE_SOURCES} PARENT_SCOPE)
   set(GCN_AUDIO_SOURCES ${RT}/audio.cpp PARENT_SCOPE)
-  set(GCN_RENDER_SOURCES ${RT}/gx/render_gl.cpp ${RT}/gx/shadergen.cpp ${RT}/gx/gl_load.cpp ${RT}/png.cpp PARENT_SCOPE)
-  set(GCN_GLAD_INCLUDE_DIR ${GLAD_INCLUDE_DIR} PARENT_SCOPE)
-  set(GCN_GLAD_SOURCE ${GLAD_SOURCE} PARENT_SCOPE)
   set(GCN_RUNTIME_WARNINGS ${GCN_RUNTIME_WARNINGS} PARENT_SCOPE)
   set(GCN_GAME_DEFS ${GCN_GAME_DEFS} PARENT_SCOPE)
-  set(GCN_GL_DEFS ${GCN_GL_DEFS} PARENT_SCOPE)
 endfunction()

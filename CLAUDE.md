@@ -6,6 +6,8 @@ bluestorm-recomp on 2026-10-07, and bluestorm-recomp was rebased onto it the nex
 Android and OpenXR frontends moved here on 2026-10-08, when Prime wanted a headset build, as
 `android/`, with the game's own decisions behind `vr::GameHooks`; bluestorm-recomp still
 builds its own copies, with its gates written into them, until it moves onto these.
+On the `aurora` branch (2026-10-10, for lm-recomp) the OpenGL renderer, the VR code and
+`android/` were deleted when the game moved to Aurora (WebGPU); they are in the history.
 
 **Nothing game-specific belongs here.** No disc IDs, guest addresses, game names or
 per-game heuristics in code; those arrive through `gcn_add_game()` and the game project's
