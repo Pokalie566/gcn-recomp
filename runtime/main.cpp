@@ -522,6 +522,7 @@ int main(int argc, char** argv) {
         SDL_SetWindowTitle(g_win, GCN_GAME_TITLE " (recompiled)");
     };
     const char* pause_at = getenv("GCN_PAUSE_AT");
+    const uint32_t quit_at = getenv("GCN_QUIT_AT") ? (uint32_t)atoi(getenv("GCN_QUIT_AT")) : 0;
 
     bool running = true;
     uint32_t frames = 0;
@@ -609,6 +610,7 @@ int main(int argc, char** argv) {
             resume_at = now + std::chrono::milliseconds(ms ? atoi(ms + 1) : 1000);
         }
         ram_snapshot(gpu_frames_presented());
+        if (quit_at && gpu_frames_presented() >= quit_at) running = false;
     }
     input_log_end();
     threads_request_quit();

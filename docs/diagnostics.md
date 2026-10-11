@@ -16,6 +16,9 @@ default), as Esc would, then resumes. A run paused that way must play out exactl
 that is not: the guest stops at an interrupt poll, the virtual clock with it, and the time
 paused is not caught up (`guest_pause` in runtime.h).
 
+`GCN_QUIT_AT=<frame>` quits once that many frames have been presented: a scripted run then
+ends on its own.
+
 The interface -- launcher, pause menu, settings, saves -- can be checked without anyone at
 the keyboard (runtime/ui/ui.h): `GCN_UI_INPUT=Down,Return,...` presses those keys in it, one
 every 16 frames, as a player would; `shot:<name>` in the list writes the window to
