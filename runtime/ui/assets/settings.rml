@@ -60,6 +60,10 @@
 				<span>Mouse sensitivity</span>
 				<span class="value"><span class="arrow" data-event-click="nudge('mouse_sens', -1)">‹</span>{{mouse_sens | format(2)}}<span class="arrow" data-event-click="nudge('mouse_sens', 1)">›</span></span>
 			</button>
+			<button class="row" data-event-click="toggle('mouse_invert')">
+				<span>Invert vertical axis <span class="note">mouse aim</span></span>
+				<span class="switch" data-class-on="mouse_invert"><span class="knob"/></span>
+			</button>
 			<h2>BUTTONS</h2>
 			<div class="bind" data-for="row, i : binds">
 				<span class="name">{{row.label}}</span>
@@ -141,6 +145,9 @@
 			</button>
 			<button class="row" data-if="!in_game" data-event-click="setup_again">
 				<span>Run the first-launch assistant again</span>
+			</button>
+			<button class="row" data-event-click="open_saves">
+				<span>Open the log's folder <span class="note">for a bug report</span></span>
 			</button>
 		</div>
 	</div>

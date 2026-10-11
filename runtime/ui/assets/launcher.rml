@@ -33,7 +33,7 @@
 		<p>{{progress_text}}</p>
 	</div>
 
-	<div class="drop" data-if="no_disc">Drop your disc image (.iso or .ciso) on this window</div>
+	<div class="drop" data-if="no_disc">Drop your disc image (.iso, .rvz, .ciso…) on this window</div>
 
 	<p class="hints"><span><span class="k">Enter / A</span>Select</span><span><span class="k">↑ ↓</span>Move</span></p>
 </body>

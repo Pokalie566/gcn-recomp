@@ -38,6 +38,7 @@ bool settings_load(const std::string& path, Settings& s) {
         else if (k == "mouse_aim") r.mouse_aim = to_bool(v);
         else if (k == "rumble") r.rumble = to_bool(v);
         else if (k == "mouse_sens") r.mouse_sens = (float)atof(v.c_str());
+        else if (k == "mouse_invert") r.mouse_invert = to_bool(v);
         else if (k == "volume") r.volume = atoi(v.c_str());
         else if (k == "lang") r.lang = v;
         else if (k == "deadzone") r.deadzone = (float)atof(v.c_str());
@@ -73,6 +74,7 @@ bool settings_save(const std::string& path, const Settings& s) {
         << "mouse_aim = " << s.mouse_aim << "\n"
         << "rumble = " << s.rumble << "\n"
         << "mouse_sens = " << s.mouse_sens << "\n"
+        << "mouse_invert = " << s.mouse_invert << "\n"
         << "volume = " << s.volume << "\n"
         << "lang = " << s.lang << "\n"
         << "deadzone = " << s.deadzone << "\n"

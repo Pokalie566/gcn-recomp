@@ -403,6 +403,7 @@ bool ui_init(SDL_Window* win, const std::string& dir, const std::string& lang) {
     m.Bind("mouse_aim", &g_s.mouse_aim);
     m.Bind("rumble", &g_s.rumble);
     m.Bind("mouse_sens", &g_s.mouse_sens);
+    m.Bind("mouse_invert", &g_s.mouse_invert);
     m.Bind("volume", &g_s.volume);
     m.Bind("lang_label", &g_lang_label);
     m.Bind("binds", &g_rows);
@@ -463,7 +464,7 @@ bool ui_init(SDL_Window* win, const std::string& dir, const std::string& lang) {
         for (auto [name, field] : {std::pair{"widescreen", &g_s.widescreen}, {"interpolate", &g_s.interpolate},
                                    {"fullscreen", &g_s.fullscreen}, {"borderless", &g_s.borderless}, {"vsync", &g_s.vsync},
                                    {"textures", &g_s.textures}, {"mouse_aim", &g_s.mouse_aim},
-                                   {"rumble", &g_s.rumble}})
+                                   {"rumble", &g_s.rumble}, {"mouse_invert", &g_s.mouse_invert}})
             if (var == name) *field = !*field;
         h.DirtyVariable(var);
     });

@@ -118,11 +118,14 @@ static MouseAim g_aim;
 #endif
 static void mouse_aim_init() {
     g_aim.deadzone = GCN_MOUSE_DEADZONE;
-    g_aim.invert_y = GCN_MOUSE_INVERT_Y != 0;
     g_aim.use_y = GCN_MOUSE_Y != 0;
     if (const char* e = getenv("GCN_MOUSE_Y")) g_aim.use_y = atoi(e) != 0;
     if (const char* e = getenv("GCN_MOUSE_DEADZONE")) g_aim.deadzone = (float)atof(e);
-    if (const char* e = getenv("GCN_MOUSE_INVERT_Y")) g_aim.invert_y = atoi(e) != 0;
+}
+// The game's way up for the mouse (GCN_MOUSE_INVERT_Y), turned over by the player's setting.
+static bool mouse_invert_y(bool flip) {
+    const char* e = getenv("GCN_MOUSE_INVERT_Y");
+    return (e ? atoi(e) != 0 : GCN_MOUSE_INVERT_Y != 0) != flip;
 }
 static bool mouse_captured() { return SDL_GetWindowRelativeMouseMode(g_win); }
 static void mouse_capture(bool on) { SDL_SetWindowRelativeMouseMode(g_win, on); }
@@ -249,6 +252,7 @@ static void apply_settings(const Settings& s, const Settings* was) {
     audio_set_volume((float)s.volume / 100.0f);
     g_mouse_aim = s.mouse_aim;
     g_aim.sens = s.mouse_sens;
+    g_aim.invert_y = mouse_invert_y(s.mouse_invert);
 }
 
 int main(int argc, char** argv) {
@@ -439,7 +443,7 @@ int main(int argc, char** argv) {
         auto take = [&](auto m) { if (s.*m != cur.*m) g_saved.*m = s.*m; };
         take(&Settings::iso), take(&Settings::scale), take(&Settings::widescreen), take(&Settings::interpolate);
         take(&Settings::fullscreen), take(&Settings::textures), take(&Settings::mouse_aim), take(&Settings::rumble);
-        take(&Settings::mouse_sens), take(&Settings::volume), take(&Settings::lang);
+        take(&Settings::mouse_sens), take(&Settings::mouse_invert), take(&Settings::volume), take(&Settings::lang);
         take(&Settings::deadzone), take(&Settings::textures_off), take(&Settings::setup_done);
         take(&Settings::borderless), take(&Settings::window_w), take(&Settings::window_h), take(&Settings::vsync);
         take(&Settings::msaa), take(&Settings::backend);

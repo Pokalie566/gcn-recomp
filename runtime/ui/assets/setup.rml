@@ -16,7 +16,7 @@
 
 		<div class="step" data-class-shown="setup_step == 1">
 			<h1>Your disc</h1>
-			<p class="line">Choose your disc image (.iso or .ciso), or drop it on this window.</p>
+			<p class="line">Choose your disc image (.iso, .rvz, .ciso…), or drop it on this window.</p>
 			<div class="check" data-for="c : checks" data-if="c.label == 'Disc' || c.label == 'Game'">
 				<span class="dot" data-class-ok="c.state == 'ok'" data-class-warn="c.state == 'warn'" data-class-fail="c.state == 'fail'" data-class-busy="c.state == 'busy'"/>
 				<span class="clabel">{{c.label}}</span>

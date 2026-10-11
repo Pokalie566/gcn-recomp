@@ -12,7 +12,7 @@
 				<span>Make a copy of the card now</span>
 			</button>
 			<button class="row" data-event-click="open_saves">
-				<span>Show the folder <span class="note">the card, its copies, the settings</span></span>
+				<span>Show the folder <span class="note">the card, its copies, the settings, the log</span></span>
 			</button>
 			<p class="message">{{saves_message}}</p>
 
