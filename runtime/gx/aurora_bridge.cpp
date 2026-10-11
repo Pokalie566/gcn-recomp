@@ -530,9 +530,10 @@ void load_bp(uint32_t w) {
         g_copies++;
         static const uint32_t log_frame = getenv("GCN_DRAW_LOG_FRAME") ? (uint32_t)atoi(getenv("GCN_DRAW_LOG_FRAME")) : ~0u;
         if (g_frames_submitted.load() == log_frame)
-            fprintf(stderr, "[copy] f%u after draw %u  src %u,%u %ux%u  trigger %06X  pixfmt %06X  fmt %02X%s  dest %08X  clear %u\n",
+            fprintf(stderr, "[copy] f%u after draw %u  src %u,%u %ux%u  trigger %06X  pixfmt %06X  fmt %02X%s  dest %08X  clear %u"
+                    "  filter %06X %06X\n",
                     log_frame, g_draws, x, y, sw, sh, v, g_bp[0x43], copy_format(v, depth), depth ? " (depth)" : "",
-                    (g_bp[0x4B] & 0x1FFFFF) << 5, (v >> 11) & 1);
+                    (g_bp[0x4B] & 0x1FFFFF) << 5, (v >> 11) & 1, g_bp[0x53], g_bp[0x54]);
         Out().cmd(GX_AURORA_LOAD_COPY_SRC).u32(wx).u32(y).u32(wsw).u32(sh);
         Out().cmd(GX_AURORA_LOAD_COPY_DST).u32(half ? wsw / 2 : wsw).u32(half ? sh / 2 : sh).u32(copy_format(v, depth)).u8(0);
         Out().cmd(GX_AURORA_LOAD_COPY_DEST).u64((uint64_t)phys_ptr((g_bp[0x4B] & 0x1FFFFF) << 5));
