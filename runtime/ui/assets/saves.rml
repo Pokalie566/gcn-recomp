@@ -37,6 +37,6 @@
 			<p class="line note" data-if="backups.size == 0">No copy yet.</p>
 		</div>
 	</div>
-	<p class="hints"><span><span class="k">Enter / A</span>Select</span><span><span class="k">Esc / B</span>Back</span></p>
+	<p class="hints"><span><span class="k">{{k_ok}}</span>Select</span><span><span class="k">{{k_back}}</span>Back</span></p>
 </body>
 </rml>

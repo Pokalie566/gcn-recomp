@@ -35,6 +35,6 @@
 
 	<div class="drop" data-if="no_disc">Drop your disc image (.iso, .rvz, .ciso…) on this window</div>
 
-	<p class="hints"><span><span class="k">Enter / A</span>Select</span><span><span class="k">↑ ↓</span>Move</span></p>
+	<p class="hints"><span><span class="k">{{k_ok}}</span>Select</span><span><span class="k">↑ ↓</span>Move</span></p>
 </body>
 </rml>

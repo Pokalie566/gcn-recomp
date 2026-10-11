@@ -16,6 +16,6 @@
 			<button data-event-click="quit">Quit</button>
 		</div>
 	</div>
-	<p class="hints"><span><span class="k">Enter / A</span>Select</span><span><span class="k">Esc / B</span>Resume</span></p>
+	<p class="hints"><span><span class="k">{{k_ok}}</span>Select</span><span><span class="k">{{k_back}}</span>Resume</span></p>
 </body>
 </rml>

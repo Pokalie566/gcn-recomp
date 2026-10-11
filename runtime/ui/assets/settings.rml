@@ -151,6 +151,6 @@
 			</button>
 		</div>
 	</div>
-	<p class="hints"><span><span class="k">Enter / A</span>Select</span><span><span class="k">← →</span>Change</span><span><span class="k">LB / RB</span>Tab</span><span><span class="k">Esc / B</span>Back</span></p>
+	<p class="hints"><span><span class="k">{{k_ok}}</span>Select</span><span><span class="k">← →</span>Change</span><span><span class="k">{{k_tab}}</span>Tab</span><span><span class="k">{{k_back}}</span>Back</span></p>
 </body>
 </rml>

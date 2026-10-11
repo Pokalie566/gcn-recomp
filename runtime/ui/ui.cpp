@@ -260,10 +260,40 @@ Rml::Input::KeyIdentifier controller_key(uint8_t button) {
     }
 }
 
+// The hint bar's keys: the keyboard's, then the first controller's own label for the button
+// that does it. SDL names buttons by place: the south one, which selects, is A on an Xbox
+// pad, Cross on a PlayStation's, B on a Nintendo's.
+Rml::String g_k_ok, g_k_back, g_k_tab;
+void hint_keys_update() {
+    SDL_GamepadType t = SDL_GAMEPAD_TYPE_UNKNOWN;
+    int n = 0;
+    if (SDL_JoystickID* ids = SDL_GetGamepads(&n)) {
+        if (n > 0) t = SDL_GetGamepadTypeForID(ids[0]);
+        SDL_free(ids);
+    }
+    std::string ok = "A", back = "B", tab = "LB / RB";
+    switch (t) {
+    case SDL_GAMEPAD_TYPE_PS3: case SDL_GAMEPAD_TYPE_PS4: case SDL_GAMEPAD_TYPE_PS5:
+        ok = ui_tr("Cross"), back = ui_tr("Circle"), tab = "L1 / R1";
+        break;
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_PRO: case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_LEFT:
+    case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_RIGHT: case SDL_GAMEPAD_TYPE_NINTENDO_SWITCH_JOYCON_PAIR:
+        ok = "B", back = "A", tab = "L / R";
+        break;
+    case SDL_GAMEPAD_TYPE_GAMECUBE: tab = "L / R"; break;
+    default: break;
+    }
+    const Rml::String k_ok = ui_tr("Enter") + " / " + ok, k_back = ui_tr("Esc") + " / " + back;
+    if (k_ok == g_k_ok && k_back == g_k_back && tab == g_k_tab) return;
+    g_k_ok = k_ok, g_k_back = k_back, g_k_tab = tab;
+    for (const char* v : {"k_ok", "k_back", "k_tab"}) g_model.DirtyVariable(v);
+}
+
 // Before Aurora draws the context: the scale, and the focus a change of page asks for.
 void frame() {
     // One dp is a 720th of the height, so the pages keep their proportions at any size.
     aurora::rmlui::set_ui_scale((float)g_ctx->GetDimensions().y / 720.0f);
+    hint_keys_update();
     if (g_refocus) {
         // The page's elements are the ones the last change made: the assistant's step.
         g_refocus = false;
@@ -405,6 +435,9 @@ bool ui_init(SDL_Window* win, const std::string& dir, const std::string& lang) {
     m.Bind("mouse_sens", &g_s.mouse_sens);
     m.Bind("mouse_invert", &g_s.mouse_invert);
     m.Bind("volume", &g_s.volume);
+    m.Bind("k_ok", &g_k_ok);
+    m.Bind("k_back", &g_k_back);
+    m.Bind("k_tab", &g_k_tab);
     m.Bind("lang_label", &g_lang_label);
     m.Bind("binds", &g_rows);
     m.Bind("game_title", &g_l.title);
