@@ -213,6 +213,7 @@ function(gcn_add_game)
                   ${GCN_RECOMP_DIR}/patches/aurora-rmlui-hooks.patch
                   ${GCN_RECOMP_DIR}/patches/aurora-card-game-name.patch
                   ${GCN_RECOMP_DIR}/patches/aurora-msaa-depth-copy.patch
+                  ${GCN_RECOMP_DIR}/patches/aurora-missing-vertex-color.patch
     ${_aurora_build}
     EXCLUDE_FROM_ALL)
   FetchContent_MakeAvailable(aurora)

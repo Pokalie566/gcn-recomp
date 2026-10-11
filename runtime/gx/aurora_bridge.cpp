@@ -60,6 +60,7 @@ uint32_t (&g_cp)[256] = g_state.cp;
 uint8_t g_tmem_tlut[0x80000];   // the upper half of TMEM, where palettes go (tmem 0x80000+)
 uint32_t g_tex_dirty = 0xFF;    // texture maps whose registers changed since their LOAD_TEXOBJ
 bool g_cull_all;                // gen mode culls both faces: no triangle is drawn
+uint32_t g_tev_rk[2][8];        // BP 0xE0-0xE7 by bit 23: [0] colour registers, [1] konst (same addresses)
 
 inline uint16_t be16(const uint8_t* p) { return (uint16_t)((p[0] << 8) | p[1]); }
 inline uint32_t be32(const uint8_t* p) { return ((uint32_t)p[0] << 24) | ((uint32_t)p[1] << 16) | ((uint32_t)p[2] << 8) | p[3]; }
@@ -464,7 +465,7 @@ void log_draw_state(uint8_t cmd, uint32_t n) {
     for (uint32_t i = 0; i < gens; i++) fprintf(stderr, "  texgen%u %08X post %08X\n", i, g_xf[0x1040 + i], g_xf[0x1050 + i]);
     fprintf(stderr, "  chan ctrl c0 %08X c1 %08X a0 %08X a1 %08X  mat %08X %08X amb %08X %08X  numchans %u\n",
             g_xf[0x100E], g_xf[0x100F], g_xf[0x1010], g_xf[0x1011], g_xf[0x100C], g_xf[0x100D], g_xf[0x100A], g_xf[0x100B], g_xf[0x1009]);
-    for (int i = 0; i < 4; i++) fprintf(stderr, "  tevreg%d %06X %06X  konst %06X %06X\n", i, g_bp[0xE0 + 2 * i], g_bp[0xE1 + 2 * i], g_bp[0xE0 + 2 * i], g_bp[0xE1 + 2 * i]);
+    for (int i = 0; i < 4; i++) fprintf(stderr, "  tevreg%d %06X %06X  konst %06X %06X\n", i, g_tev_rk[0][2 * i], g_tev_rk[0][2 * i + 1], g_tev_rk[1][2 * i], g_tev_rk[1][2 * i + 1]);
     fprintf(stderr, "  fog %06X %06X %06X %06X %06X  indirect %06X\n", g_bp[0xEE], g_bp[0xEF], g_bp[0xF0], g_bp[0xF1], g_bp[0xF2], g_bp[0x10]);
 }
 
@@ -486,6 +487,7 @@ void load_bp(uint32_t w) {
         g_state.bp_mask = 0xFFFFFF;
     }
     g_bp[reg] = v;
+    if (reg >= 0xE0 && reg <= 0xE7) g_tev_rk[v >> 23 & 1][reg - 0xE0] = v;
     if ((reg >= 0x80 && reg <= 0x9B) || (reg >= 0xA0 && reg <= 0xBB)) g_tex_dirty |= 1u << ((reg & 3) + (reg >= 0xA0 ? 4 : 0));
     switch (reg) {
     case 0x00:   // gen mode. Culling both faces, which Aurora rejects, draws no triangle.
@@ -599,12 +601,20 @@ uint32_t parse(const uint8_t* data, uint32_t len, bool partial_ok) {
                 // n - 2, unsigned, and rejects culling both faces.
                 const uint8_t prim = cmd & 0xF8;
                 if (n == 0 || ((prim == 0x98 || prim == 0xA0) && n < 3) || (g_cull_all && prim < 0xA8)) continue;
-                // GCN_DRAW_SKIP=a-b: the frame's draws a to b left out, to find which draws
-                // make something (with GCN_DRAW_LOG=<n>: draw n's state on stderr).
-                static uint32_t skip_lo = ~0u, skip_hi = 0;
+                // GCN_DRAW_SKIP=a-b[,c-d...]: the frame's draws a to b left out, to find which
+                // draws make something; !a-b,... keeps only those (with GCN_DRAW_LOG=<n>: draw
+                // n's state on stderr).
+                static std::vector<std::pair<uint32_t, uint32_t>> skip_ranges;
+                static bool skip_keep;
                 static const uint32_t log_draw = getenv("GCN_DRAW_LOG") ? (uint32_t)atoi(getenv("GCN_DRAW_LOG")) : ~0u;
                 static const bool skip_parsed = [] {
-                    if (const char* r = getenv("GCN_DRAW_SKIP")) sscanf(r, "%u-%u", &skip_lo, &skip_hi);
+                    if (const char* r = getenv("GCN_DRAW_SKIP")) {
+                        skip_keep = *r == '!';
+                        uint32_t lo, hi;
+                        int len;
+                        for (r += skip_keep; sscanf(r, "%u-%u%n", &lo, &hi, &len) == 2; r += len + (r[len] == ','))
+                            skip_ranges.push_back({lo, hi});
+                    }
                     return true;
                 }();
                 (void)skip_parsed;
@@ -613,7 +623,9 @@ uint32_t parse(const uint8_t* data, uint32_t len, bool partial_ok) {
                 bool srtg = false;   // a colour texgen (GCN_DRAW_LOG_FRAME, GCN_DRAW_SKIP=srtg)
                 for (uint32_t i = 0; i < (g_bp[0x00] & 0xF); i++) srtg |= ((g_xf[0x1040 + i] >> 4) & 7) >= 2;
                 if (g_draws == log_draw || (srtg && g_frames_submitted.load() == log_frame)) log_draw_state(cmd, n);
-                if ((g_draws >= skip_lo && g_draws <= skip_hi) || (srtg && skip_srtg)) { g_draws++; continue; }
+                bool in_range = false;
+                for (const auto& [lo, hi] : skip_ranges) in_range |= g_draws >= lo && g_draws <= hi;
+                if ((!skip_ranges.empty() && in_range != skip_keep) || (srtg && skip_srtg)) { g_draws++; continue; }
                 load_arrays(L, p + 3, n);
                 load_textures();
                 if (g_wide != 1.0f) {

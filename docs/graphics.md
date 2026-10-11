@@ -27,7 +27,10 @@ that date.
   for every text, absolute document paths, and the interface's render target for captures),
   `card-game-name` (`g_gameName` gets its NUL: the card takes its strlen), `msaa-depth-copy`
   (an EFB depth copy from a multisampled target reads sample 0, instead of stopping the game:
-  LM copies its depth every frame, so MSAA needs it).
+  LM copies its depth every frame, so MSAA needs it), `missing-vertex-color` (a channel that
+  takes its material or ambient colour from a vertex with no colour reads white, and colour 1
+  falls back to colour 0, as Dolphin does; Aurora read black: most of the flashlight cone's
+  light was lost).
 - **Texture packs**: Aurora loads PNG and DDS, BC1/BC3/BC7 included (uploaded compressed;
   checked with a BC7 pack over the title screen).
 - **16:9**: the rule of § Widescreen below, in the bridge. Aurora's frame is 854 logical

@@ -134,9 +134,11 @@ frame, its draws, vertex bytes and EFB copies, and how long it waited on the GPU
 ## Finding a draw or a function
 
 - The GX bridge (`gx/aurora_bridge.cpp`): `GCN_DRAW_SKIP=a-b` drops
-  draws a to b of every frame (`srtg`: the draws with a colour texgen); `GCN_DRAW_LOG=<n>`
-  prints draw n's state (gen mode, Z, blend, alpha test, TEV stages, texgens, channels,
-  fog); `GCN_DRAW_LOG_FRAME=<frame>` prints, for that frame, its colour-texgen draws, its EFB
+  draws a to b of every frame, `a-b,c-d` several ranges, `!a-b,c-d` all but those (keep the
+  frame's last draws too when the game redraws the frame from a copy at its end), `srtg` the
+  draws with a colour texgen; `GCN_DRAW_LOG=<n>`
+  prints draw n's state (gen mode, Z, blend, alpha test, TEV stages, texgens, channels, TEV
+  registers and konst colours -- which share their BP addresses -- fog); `GCN_DRAW_LOG_FRAME=<frame>` prints, for that frame, its colour-texgen draws, its EFB
   copies (rect, format, destination) and every texture it loads (address, size, format), so
   a copy can be followed to the draws that sample it. Frame numbers are the bridge's
   (`g_frames_submitted`): one less than the dump's.
