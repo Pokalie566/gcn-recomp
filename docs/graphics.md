@@ -33,7 +33,11 @@ that date.
   light was lost), `scissor-offset` (the scissor is measured from the scissor box offset,
   BP 0x59, as the hardware does, not from a fixed 342: a game that moves the offset moves its
   viewports with it, and Aurora's scissor sat two pixels left of the drawing -- the last two
-  columns of every pass went undrawn). At 16:9 the frame is 854 wide and the bridge maps the
+  columns of every pass went undrawn). Proposed upstream (encounter/aurora): #281
+  scissor-offset, #282 missing-vertex-color, #283 srtg-lit-color, #284 msaa-depth-copy, #285
+  card-game-name, #286 blocking-pipelines, #287 rmlui-hooks (its translator and absolute
+  paths; the render target accessor stays here). A patch goes once its change is in the
+  pinned commit. At 16:9 the frame is 854 wide and the bridge maps the
   game's 640 into it by 854/640, so that a full-width scissor or copy ends on the last column.
 - **Texture packs**: Aurora loads PNG and DDS, BC1/BC3/BC7 included (uploaded compressed;
   checked with a BC7 pack over the title screen).
