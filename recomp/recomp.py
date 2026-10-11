@@ -4,10 +4,16 @@
 Usage: recomp.py <main.dol> <dtk symbols.txt> <outdir> <tables dir>
 
 The tables directory holds the per-game steering files: names.txt, hle.txt,
-patches.txt, special_calls.txt and idle.txt (any may be absent).
+patches.txt, special_calls.txt and idle.txt (any may be absent). Their addresses may be
+written as a symbol's name plus an offset, and a patch's code may name a symbol's address as
+{{name}}: the same tables then serve every version of the game. A version other than the
+one the symbols were made for has its own, symbols-<DOL SHA-1, 8 digits>.txt beside them,
+and names-<same>.txt in the tables naming its functions as the tables do.
 """
 import collections
+import hashlib
 import os
+import re
 import struct
 import sys
 
@@ -19,7 +25,17 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 FUNCS_PER_FILE = 150
 
 
-def load_kv(path):
+def table_addr(tok, symbols=None):
+    """An address in a table: hex, or a symbol's name plus an offset (OSSaveContext,
+    SelectThread+0x1C4), so that one table serves every version of a game that has its own
+    symbols."""
+    if symbols is not None and not tok[0].isdigit():
+        name, _, off = tok.partition('+')
+        return symbols[name] + (int(off, 16) if off else 0)
+    return int(tok, 16)
+
+
+def load_kv(path, symbols=None):
     """addr name lines -> {addr: name}"""
     out = {}
     if not os.path.exists(path):
@@ -29,7 +45,7 @@ def load_kv(path):
         if not line:
             continue
         parts = line.split()
-        out[int(parts[0], 16)] = parts[1]
+        out[table_addr(parts[0], symbols)] = parts[1]
     return out
 
 
@@ -70,11 +86,25 @@ class Func:
         self.hle = False
 
 
+def for_version(path, sha1):
+    """The file for this version of the game, if there is one: <name>-<first 8 of the DOL's
+    SHA-1><ext> beside `path` (symbols-a1e2bd82.txt), else `path` itself."""
+    base, ext = os.path.splitext(path)
+    own = f'{base}-{sha1[:8]}{ext}'
+    return own if os.path.exists(own) else path
+
+
 def main():
     dol_path, sym_path, outdir, tables = sys.argv[1:5]
     dol = Dol(dol_path)
-    syms = load_symbols(sym_path)
+    # Another version of the game than the one the tables were written for: its own symbols,
+    # and names-<sha1>.txt giving its functions the names the tables use.
+    sha1 = hashlib.sha1(open(dol_path, 'rb').read()).hexdigest()
+    syms = load_symbols(for_version(sym_path, sha1))
     names = load_kv(os.path.join(tables, 'names.txt'))
+    names.update(load_kv(for_version(os.path.join(tables, 'names.txt'), sha1)))
+    sym_addr = {s['name']: s['addr'] for s in syms}
+    sym_addr.update({name: addr for addr, name in names.items()})
     hle = load_list(os.path.join(tables, 'hle.txt'))
 
     funcs = []
@@ -187,11 +217,11 @@ def main():
             s += f'call_indirect(c, 0x{t:08X}u);'
         return s
 
-    special_calls = load_kv(os.path.join(tables, 'special_calls.txt'))
+    special_calls = load_kv(os.path.join(tables, 'special_calls.txt'), sym_addr)
     # idle.txt: addresses of backward branches that are the OS's "nothing to run" spin
     # (the SDK scheduler's wait for RunQueueBitmap). They poll through IDLE_CHECK, which
     # lets the runtime skip guest time forward to the next event instead of spinning.
-    idle_loops = set(load_kv(os.path.join(tables, 'idle.txt')).keys())
+    idle_loops = set(load_kv(os.path.join(tables, 'idle.txt'), sym_addr).keys())
     # patches.txt: "ADDR  <C statement>" replaces the instruction at ADDR.
     patches = {}
     pp = os.path.join(tables, 'patches.txt')
@@ -200,7 +230,9 @@ def main():
             line = line.split('#', 1)[0].rstrip()
             if line.strip():
                 a, code = line.split(None, 1)
-                patches[int(a, 16)] = code
+                # {{name}} in the code: that symbol's address, in this version.
+                code = re.sub(r'\{\{(\S+?)\}\}', lambda m: f'0x{sym_addr[m.group(1)]:08X}u', code)
+                patches[table_addr(a, sym_addr)] = code
 
     def emit_body(f, out):
         in_range = lambda t: f.addr <= t < f.end

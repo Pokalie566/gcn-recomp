@@ -37,10 +37,15 @@ bool game_module_load(const std::string& path, std::string* err) {
     return true;
 }
 
-std::string game_module_find(const std::string& prepared) {
+#ifndef GCN_DOL_SHA1   // a test builds this file on its own
+#define GCN_DOL_SHA1 ""
+#endif
+
+std::string game_module_find(const std::string& prepared, const std::string& dol_sha1) {
     if (const char* e = getenv("GCN_GAME_MODULE")) return e;
+    // A development build's, for its own disc's main.dol; another version's is prepared.
     const std::string dev = plat_executable_dir() + "/" + game_module_filename();
-    if (plat_readable(dev.c_str())) return dev;
+    if (dol_sha1 == GCN_DOL_SHA1 && plat_readable(dev.c_str())) return dev;
     if (!prepared.empty() && plat_readable(prepared.c_str())) return prepared;
     return {};
 }

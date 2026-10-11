@@ -432,6 +432,17 @@ int main(int argc, char** argv) {
     mouse_aim_init();
     apply_settings(cur, nullptr);
     ui_init(g_win, ui_dir, cur.lang);
+    // The console's language, which a PAL disc plays in: the player's, else the system's.
+    std::string console_lang = cur.lang;
+    if (console_lang == "auto") {
+        int n = 0;
+        console_lang = "en";
+        if (SDL_Locale** l = SDL_GetPreferredLocales(&n)) {
+            if (n > 0) console_lang = l[0]->language;
+            SDL_free(l);
+        }
+    }
+    exi_set_language(console_lang);
     crash_set_translator(ui_trf);
     // GCN_CRASH_TEST=1: a fault right here, =fatal a fatal error, to see the crash report.
     if (const char* t = getenv("GCN_CRASH_TEST")) {

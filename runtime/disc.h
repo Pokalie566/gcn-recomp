@@ -10,6 +10,9 @@
 // Opens a disc image, closing the one before: a launcher reads one disc after another.
 // False, with nod's reason, if it is not a disc image nod can read.
 bool disc_open(const char* path, std::string* err = nullptr);
+// The last disc opened: its game code, region and maker ("GLMP01"); the build's own disc
+// (GCN_DISC_ID) before one is. One recompiled game takes every version of its disc.
+extern char g_disc_id[7];
 // The open disc, as the raw disc it holds. False past its end, or with none open.
 bool iso_read(uint64_t offset, void* dst, uint32_t len);
 

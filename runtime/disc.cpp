@@ -12,11 +12,20 @@
 static NodHandle* g_disc;
 static std::mutex g_disc_mutex;   // the drive and the audio stream's thread both read
 
+#ifndef GCN_DISC_ID   // a test builds this file on its own
+#define GCN_DISC_ID ""
+#endif
+char g_disc_id[7] = GCN_DISC_ID;
+
 bool disc_open(const char* path, std::string* err) {
     std::lock_guard<std::mutex> lk(g_disc_mutex);
     nod_free(g_disc);
     g_disc = nullptr;
-    if (nod_disc_open(path, nullptr, &g_disc) == NOD_RESULT_OK) return true;
+    if (nod_disc_open(path, nullptr, &g_disc) == NOD_RESULT_OK) {
+        uint8_t id[6];
+        if (nod_seek(g_disc, 0, 0) >= 0 && nod_read(g_disc, id, 6) == 6) memcpy(g_disc_id, id, 6);
+        return true;
+    }
     g_disc = nullptr;
     if (err) *err = nod_error_message() ? nod_error_message() : "cannot read the disc image";
     return false;

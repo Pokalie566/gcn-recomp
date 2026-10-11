@@ -50,6 +50,15 @@ The game project provides:
 - `recomp/names.txt`, `recomp/patches.txt` — hand-named functions and instruction patches,
   usually empty.
 
+An address in these tables may be a symbol's name plus an offset (`SelectThread+0x140`), and a
+patch's code may name a symbol's address as `{{name}}`: the same tables then serve every
+version of the disc. A version other than the one `symbols.txt` describes brings its own,
+`symbols-<first 8 digits of its main.dol's SHA-1>.txt` beside it, and
+`recomp/names-<same>.txt` naming its functions as the tables do; recomp.py takes them for that
+main.dol. The runtime takes every version of the game's disc (by game code and maker), reads
+its region from the disc (`g_disc_id`: the memory card's region folder, texture packs), and
+runs the display at 50 Hz when the game sets PAL.
+
 ## Playing
 
 `<name> [image.iso]` runs the game; with no path it finds the image the build was

@@ -103,8 +103,8 @@ void stat_out(uint32_t a, const CARDStat& s) {
     mem_w32(a + 0x68, s.offsetData);
 }
 
-std::string game4() { return std::string(GCN_DISC_ID).substr(0, 4); }
-std::string maker2() { return std::string(GCN_DISC_ID).substr(4, 2); }
+std::string game4() { return std::string(g_disc_id).substr(0, 4); }
+std::string maker2() { return std::string(g_disc_id).substr(4, 2); }
 
 // The older card, a raw image the runtime emulated over EXI: this game's files, as .gci in
 // the folder, once (marked in `base`). The image is left as it is.
@@ -138,7 +138,7 @@ void card_init() {
     const std::string base = g_card_base ? g_card_base : save_path("card");
     // Slot A's folder made first, as Aurora lays it out (aurora/card.h: <base>/<region>/Card A):
     // Aurora mounts a folder that exists, and would otherwise fall back on its own.
-    const char region = GCN_DISC_ID[3];
+    const char region = g_disc_id[3];
     std::error_code ec;
     fs::create_directories(fs::path(base) / (region == 'P' ? "EUR" : region == 'J' ? "JAP" : "USA") / "Card A", ec);
     snprintf(aurora::g_gameName, sizeof(aurora::g_gameName), "%s", game4().c_str());

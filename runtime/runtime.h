@@ -149,6 +149,9 @@ void vi_init(); uint16_t vi_read16(uint32_t off); void vi_write16(uint32_t off, 
 uint32_t di_read32(uint32_t off); void di_write32(uint32_t off, uint32_t v);
 void si_init(); uint32_t si_read32(uint32_t off); void si_write32(uint32_t off, uint32_t v);
 void exi_init(); uint32_t exi_read32(uint32_t off); void exi_write32(uint32_t off, uint32_t v);
+// The console's language, as the IPL's settings keep it in SRAM, for a disc (PAL's) that picks
+// its own from it: "en", "de", "fr", "es", "it" or "nl"; English otherwise. Before the boot.
+void exi_set_language(const std::string& iso);
 void ai_init(); uint32_t ai_read32(uint32_t off); void ai_write32(uint32_t off, uint32_t v);
 void dsp_init(); uint16_t dsp_read16(uint32_t off); void dsp_write16(uint32_t off, uint16_t v);
 void cp_init(); uint16_t cp_read16(uint32_t off); void cp_write16(uint32_t off, uint16_t v);

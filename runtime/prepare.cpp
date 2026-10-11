@@ -237,7 +237,7 @@ bool game_module_ensure(const char* iso, bool force) {
         fprintf(stderr, "%s\n", err.c_str());
         return false;
     }
-    std::string path = force ? std::string() : game_module_find(prepare_module_path(sha1));
+    std::string path = force ? std::string() : game_module_find(prepare_module_path(sha1), sha1);
     if (path.empty()) {
         fprintf(stderr, "[prepare] preparing " GCN_GAME_TITLE " from %s (once)\n", iso);
         int last = -1;

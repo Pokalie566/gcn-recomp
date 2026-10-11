@@ -440,11 +440,23 @@ function(gcn_add_game)
           list(APPEND _dep_licenses COMMAND ${CMAKE_COMMAND} -E copy ${_from} ${_res}/licenses/${_to})
         endif()
       endforeach()
+      # The other versions' symbols beside the build's, symbols-<DOL SHA-1, 8 digits>.txt
+      # (recomp.py takes the one for the player's main.dol).
+      get_filename_component(_sym_dir ${G_SYMBOLS} DIRECTORY)
+      get_filename_component(_sym_name ${G_SYMBOLS} NAME_WE)
+      file(GLOB _ver_syms ${_sym_dir}/${_sym_name}-*.txt)
+      set(_ver_sym_copies)
+      foreach(_vs ${_ver_syms})
+        get_filename_component(_vs_name ${_vs} NAME)
+        string(REPLACE "${_sym_name}-" "symbols-" _vs_name ${_vs_name})
+        list(APPEND _ver_sym_copies COMMAND ${CMAKE_COMMAND} -E copy ${_vs} ${_res}/${_vs_name})
+      endforeach()
       add_custom_command(TARGET ${G_NAME} POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory ${_res}/recomp ${_res}/include ${_res}/licenses
         COMMAND ${CMAKE_COMMAND} -E copy ${_recomp_py} ${_res}/recomp/
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${G_TABLES} ${_res}/tables
         COMMAND ${CMAKE_COMMAND} -E copy ${G_SYMBOLS} ${_res}/symbols.txt
+        ${_ver_sym_copies}
         COMMAND ${CMAKE_COMMAND} -E copy ${RT}/recomp.h ${RT}/compat.h ${_res}/include/
         ${_dep_licenses}
         COMMAND ${CMAKE_COMMAND} -E copy ${RT}/third_party/nod-LICENSE-MIT.txt ${_res}/licenses/nod.txt

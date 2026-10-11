@@ -13,7 +13,9 @@ uint32_t boot_load(const char* iso_path) {
     if (!iso_read(0, hdr, sizeof(hdr))) fatal("cannot read disc header");
     uint32_t dol_off = be32(hdr + 0x420), fst_off = be32(hdr + 0x424), fst_size = be32(hdr + 0x428), fst_max = be32(hdr + 0x42C);
     LOG(LOG_OS, "disc %.6s \"%s\" dol@%X fst@%X size %X", (const char*)hdr, (const char*)hdr + 0x20, dol_off, fst_off, fst_size);
-    if (memcmp(hdr, GCN_DISC_ID, 6) != 0) fatal("this build was recompiled from disc %s, not %.6s", GCN_DISC_ID, (const char*)hdr);
+    // The game, by its code and maker; its region's main.dol is the prepared one (prepare.h).
+    if (memcmp(hdr, GCN_DISC_ID, 3) != 0 || memcmp(hdr + 4, GCN_DISC_ID + 4, 2) != 0)
+        fatal("this build is for disc %s, not %.6s", GCN_DISC_ID, (const char*)hdr);
 
     // ---- DOL ----
     uint8_t dh[0x100];

@@ -31,8 +31,9 @@ std::string game_module_filename();
 bool game_module_load(const std::string& path, std::string* err);
 
 // Which module to load when nothing else says: GCN_GAME_MODULE, else a development build's
-// beside the executable, else `prepared` if it exists. Empty when there is none.
-std::string game_module_find(const std::string& prepared);
+// beside the executable when the disc's main.dol (`dol_sha1`) is the one it was built from,
+// else `prepared` if it exists. Empty when there is none.
+std::string game_module_find(const std::string& prepared, const std::string& dol_sha1);
 
 // ---- Building one ----
 // With the app's own toolchain (tools/fetch_toolchain.sh): zig, in <resources>/toolchain or

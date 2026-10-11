@@ -18,9 +18,19 @@ static bool g_ipl_have_cmd;
 static uint32_t g_ipl_pos;
 static std::string g_uart_line;
 
+static uint8_t g_language;   // SRAM's: 0 English, 1 German, 2 French, 3 Spanish, 4 Italian, 5 Dutch
+
+void exi_set_language(const std::string& iso) {
+    static const char* const k[] = {"en", "de", "fr", "es", "it", "nl"};
+    g_language = 0;
+    for (uint8_t i = 0; i < 6; i++)
+        if (iso == k[i]) g_language = i;
+}
+
 static void sram_init() {
     memset(g_sram, 0, sizeof(g_sram));
-    // counter_bias = 0, display_offset_h = 0, ntd = 0, lang = 0 (English), flags = stereo|...
+    // counter_bias = 0, display_offset_h = 0, ntd = 0, the language, flags = stereo|...
+    g_sram[0x12] = g_language;
     g_sram[0x13] = 0x2C;
     // OSSramEx: flashID[2][12] at 0x14 (zero), flashIDCheckSum[2] at 0x3A must equal ~sum(flashID).
     g_sram[0x3A] = 0xFF;

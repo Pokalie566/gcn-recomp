@@ -1,5 +1,6 @@
 // The interface. See ui.h.
 #include "ui/ui.h"
+#include "disc.h"
 #include "gx/aurora_gpu.h"
 #include "pad_bindings.h"
 #include "platform.h"
@@ -610,7 +611,7 @@ void ui_set_saves(const UiSaves& s) {
     g_backup_rows.clear();
     for (const CardBackup& b : s.backups) {
         size_t n = 0;
-        for (const CardFile& f : card_files(b.path)) n += f.game == GCN_DISC_ID;
+        for (const CardFile& f : card_files(b.path)) n += f.game == g_disc_id;
         g_backup_rows.push_back({b.when, n == 1 ? ui_tr("1 save") : ui_trf("{} saves", std::to_string(n))});
     }
     g_saves_message = s.message;

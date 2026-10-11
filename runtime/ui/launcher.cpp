@@ -134,7 +134,7 @@ void check(const LauncherEnv& env, const Settings& cur) {
             }
         }
     }
-    g_module = disc_ok ? game_module_find(prepare_module_path(sha1)) : "";
+    g_module = disc_ok ? game_module_find(prepare_module_path(sha1), sha1) : "";
     if (disc_ok) {
         if (l.preparing) l.checks.push_back({"Prepared", "busy", l.progress_text});
         else if (!g_module.empty()) l.checks.push_back({"Prepared", "ok", ui_tr("Ready to play")});
@@ -158,7 +158,7 @@ void check(const LauncherEnv& env, const Settings& cur) {
     l.checks.push_back(pads ? UiCheck{"Controller", "ok", pad_name}
                             : UiCheck{"Controller", "warn", ui_tr("None: the keyboard plays (Settings, Controls)")});
     size_t saves = 0;
-    for (const CardFile& f : card_files(card_path())) saves += f.game == GCN_DISC_ID;
+    for (const CardFile& f : card_files(card_path())) saves += f.game == g_disc_id;
     l.checks.push_back({"Memory card", "ok", card_files(card_path()).empty() ? ui_tr("New, made at the first save")
                                              : saves == 0 ? ui_tr("No save yet") : saves == 1 ? ui_tr("1 save") : ui_trf("{} saves", std::to_string(saves))});
     const size_t textures = gx::texture_pack_count();
@@ -199,7 +199,7 @@ void prepare_start(const std::string& iso) {
 void saves_update(const std::string& message) {
     UiSaves s;
     for (const CardFile& f : card_files(card_path()))
-        if (f.game == GCN_DISC_ID) s.files.push_back(f);
+        if (f.game == g_disc_id) s.files.push_back(f);
     s.backups = card_backups(copies_dir());
     s.message = message;
     ui_set_saves(s);
@@ -227,7 +227,7 @@ bool saves_act(int action, int index) {
     case UI_IMPORT_SAVE: {
         const std::string gci = ui_pick_file(ui_tr("Choose a save (.gci)"), {"gci"});
         if (gci.empty()) return true;
-        const std::string err = card_import(gci, GCN_DISC_ID, card_path(), copies_dir(), kKeepCopies);
+        const std::string err = card_import(gci, g_disc_id, card_path(), copies_dir(), kKeepCopies);
         if (err.empty()) card_remount();
         saves_update(err.empty() ? ui_tr("Save imported. The card as it was is now a copy.")
                      : err == "another game" ? ui_tr("That save is for another game.")
@@ -237,7 +237,7 @@ bool saves_act(int action, int index) {
     case UI_DELETE_SAVE: {
         std::vector<CardFile> mine;
         for (const CardFile& f : card_files(card_path()))
-            if (f.game == GCN_DISC_ID) mine.push_back(f);
+            if (f.game == g_disc_id) mine.push_back(f);
         if (index < 0 || index >= (int)mine.size()) return true;
         const bool ok = card_delete(mine[index].file, card_path(), copies_dir(), kKeepCopies);
         if (ok) card_remount();

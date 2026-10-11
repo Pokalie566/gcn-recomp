@@ -46,9 +46,9 @@ std::string texture_pack_dir() {
     const char* env = getenv("GCN_TEXTURES");
     const fs::path root = env ? fs::path(env) : fs::path(save_path("textures"));
     std::error_code ec;
-    if (!fs::is_directory(root / GCN_DISC_ID, ec) && fs::is_directory(root / std::string(GCN_DISC_ID).substr(0, 3), ec))
-        return (root / std::string(GCN_DISC_ID).substr(0, 3)).string();
-    return (root / GCN_DISC_ID).string();
+    if (!fs::is_directory(root / g_disc_id, ec) && fs::is_directory(root / std::string(g_disc_id).substr(0, 3), ec))
+        return (root / std::string(g_disc_id).substr(0, 3)).string();
+    return (root / g_disc_id).string();
 }
 
 std::vector<TexturePack> texture_pack_list() {
