@@ -330,7 +330,7 @@ void end_frame() {
     for (Sent& a : g_sent) a = {};
     g_copied.clear();
     g_hold = g_hold_frames.load();
-    set_wide(g_widescreen ? 4.0f / 3.0f : 1.0f);
+    set_wide(g_widescreen ? 854.0f / 640.0f : 1.0f);   // the frame is 854 wide (main.cpp)
 }
 
 // ---- 16:9 ----

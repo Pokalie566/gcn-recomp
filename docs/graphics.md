@@ -30,7 +30,11 @@ that date.
   LM copies its depth every frame, so MSAA needs it), `missing-vertex-color` (a channel that
   takes its material or ambient colour from a vertex with no colour reads white, and colour 1
   falls back to colour 0, as Dolphin does; Aurora read black: most of the flashlight cone's
-  light was lost).
+  light was lost), `scissor-offset` (the scissor is measured from the scissor box offset,
+  BP 0x59, as the hardware does, not from a fixed 342: a game that moves the offset moves its
+  viewports with it, and Aurora's scissor sat two pixels left of the drawing -- the last two
+  columns of every pass went undrawn). At 16:9 the frame is 854 wide and the bridge maps the
+  game's 640 into it by 854/640, so that a full-width scissor or copy ends on the last column.
 - **Texture packs**: Aurora loads PNG and DDS, BC1/BC3/BC7 included (uploaded compressed;
   checked with a BC7 pack over the title screen).
 - **16:9**: the rule of § Widescreen below, in the bridge. Aurora's frame is 854 logical
