@@ -120,6 +120,16 @@ ready = prêt
 # Sauvegardes
 Make a copy of the card now = Faire une copie de la carte maintenant
 Show the folder = Ouvrir le dossier
+Import a save… = Importer une sauvegarde…
+a .gci file, from Dolphin for instance = un fichier .gci, de Dolphin par exemple
+Delete = Supprimer
+Each save is a .gci file in the card folder, which Dolphin imports as it is. Deleting one first copies the card. = Chaque sauvegarde est un fichier .gci du dossier de la carte, que Dolphin importe tel quel. En supprimer une copie d'abord la carte.
+Choose a save (.gci) = Choisis une sauvegarde (.gci)
+Save imported. The card as it was is now a copy. = Sauvegarde importée. La carte telle qu'elle était est maintenant une copie.
+That save is for another game. = Cette sauvegarde est celle d'un autre jeu.
+That file is not a GameCube save. = Ce fichier n'est pas une sauvegarde GameCube.
+Save deleted. The card as it was is now a copy. = Sauvegarde supprimée. La carte telle qu'elle était est maintenant une copie.
+Could not delete that save. = Impossible de supprimer cette sauvegarde.
 the card, its copies, the settings, the log = la carte, ses copies, les réglages, le journal
 Open the log's folder = Ouvrir le dossier du journal
 for a bug report = pour signaler un bug

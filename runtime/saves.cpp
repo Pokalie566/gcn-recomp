@@ -49,6 +49,7 @@ std::vector<CardFile> card_files(const std::string& card) {
         f.name = text(e + 0x08, 32);
         f.modified = be32(e + 0x28);
         f.blocks = be16(e + 0x38);
+        f.file = name;
         const size_t comment = 0x40 + (size_t)be32(e + 0x3C);
         if (comment + 64 <= d.size()) {
             const std::string a = text(&d[comment], 32), b = text(&d[comment + 32], 32);
@@ -107,4 +108,27 @@ bool card_restore(const std::string& backup, const std::string& card, const std:
     if (saves.empty()) return false;
     card_backup(card, dir, keep);
     return write_saves(saves, card);
+}
+
+std::string card_import(const std::string& gci, const std::string& game, const std::string& card,
+                        const std::string& dir, int keep) {
+    const std::vector<uint8_t> d = read_file(gci);
+    if (d.size() < 0x40 || d.size() != 0x40 + (size_t)be16(&d[0x38]) * 0x2000) return "not a save";
+    const std::string its_game = text(d.data(), 6), its_name = text(&d[0x08], 32);
+    if (!game.empty() && its_game != game) return "another game";
+    card_backup(card, dir, keep);
+    std::error_code ec;
+    fs::create_directories(card, ec);
+    for (const CardFile& f : card_files(card))
+        if (f.game == its_game && f.name == its_name) fs::remove(fs::path(card) / f.file, ec);
+    std::ofstream out(fs::path(card) / fs::path(gci).filename(), std::ios::binary);
+    out.write((const char*)d.data(), (std::streamsize)d.size());
+    return out ? "" : "not written";
+}
+
+bool card_delete(const std::string& file, const std::string& card, const std::string& dir, int keep) {
+    if (file.empty() || file.find_first_of("/\\") != std::string::npos) return false;
+    card_backup(card, dir, keep);
+    std::error_code ec;
+    return fs::remove(fs::path(card) / file, ec);
 }

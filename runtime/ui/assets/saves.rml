@@ -14,14 +14,18 @@
 			<button class="row" data-event-click="open_saves">
 				<span>Show the folder <span class="note">the card, its copies, the settings, the log</span></span>
 			</button>
+			<button class="row" data-if="!in_game" data-event-click="import_save">
+				<span>Import a save… <span class="note">a .gci file, from Dolphin for instance</span></span>
+			</button>
 			<p class="message">{{saves_message}}</p>
 
 			<h2>ON THE MEMORY CARD</h2>
-			<div class="line" data-for="s : saves">
-				<span>{{s.comment}}</span>
-				<span class="note">{{s.when}}</span>
+			<div class="line" data-for="s, i : saves">
+				<span>{{s.comment}} <span class="note">{{s.when}}</span></span>
+				<button class="small" data-if="!in_game" data-event-click="delete_save(i)">Delete</button>
 			</div>
 			<p class="line note" data-if="saves.size == 0">No save yet.</p>
+			<p class="line note" data-if="saves.size > 0">Each save is a .gci file in the card folder, which Dolphin imports as it is. Deleting one first copies the card.</p>
 
 			<h2>COPIES OF THE CARD</h2>
 			<p class="line note" data-if="in_game">The game makes a copy each time it starts and keeps the last 10. Restore one from the launcher, with the game stopped.</p>

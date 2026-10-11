@@ -224,6 +224,26 @@ bool saves_act(int action, int index) {
     case UI_OPEN_SAVES:
         plat_open_folder(save_path(""));
         return true;
+    case UI_IMPORT_SAVE: {
+        const std::string gci = ui_pick_file(ui_tr("Choose a save (.gci)"), {"gci"});
+        if (gci.empty()) return true;
+        const std::string err = card_import(gci, GCN_DISC_ID, card_path(), copies_dir(), kKeepCopies);
+        if (err.empty()) card_remount();
+        saves_update(err.empty() ? ui_tr("Save imported. The card as it was is now a copy.")
+                     : err == "another game" ? ui_tr("That save is for another game.")
+                                             : ui_tr("That file is not a GameCube save."));
+        return true;
+    }
+    case UI_DELETE_SAVE: {
+        std::vector<CardFile> mine;
+        for (const CardFile& f : card_files(card_path()))
+            if (f.game == GCN_DISC_ID) mine.push_back(f);
+        if (index < 0 || index >= (int)mine.size()) return true;
+        const bool ok = card_delete(mine[index].file, card_path(), copies_dir(), kKeepCopies);
+        if (ok) card_remount();
+        saves_update(ok ? ui_tr("Save deleted. The card as it was is now a copy.") : ui_tr("Could not delete that save."));
+        return true;
+    }
     default:
         return false;
     }

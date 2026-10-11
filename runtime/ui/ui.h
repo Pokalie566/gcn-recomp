@@ -94,10 +94,12 @@ enum UiAction {
     UI_PICK_DISC, UI_PREPARE_AGAIN,          // the Disc settings page's
     UI_TEST_RUMBLE, UI_OPEN_TEXTURES,        // the Controller and Textures pages'
     UI_SETUP_DONE, UI_SETUP_AGAIN,           // the assistant's end (index 1: play), and running it again
+    UI_IMPORT_SAVE, UI_DELETE_SAVE,          // the saves page's, with the game stopped; UI_DELETE_SAVE with ui_action_index
 };
 // What the player chose since the last call.
 UiAction ui_take_action();
-// The backup UI_RESTORE is about, as an index into the last UiSaves' backups.
+// The backup UI_RESTORE is about, as an index into the last UiSaves' backups; the save
+// UI_DELETE_SAVE is about, as an index into its files.
 int ui_action_index();
 
 // True, with `s` updated, when the player has changed a setting since the last call.

@@ -14,6 +14,7 @@ struct CardFile {
     std::string comment;    // the game's two comment lines, joined: what a GameCube menu shows
     uint16_t blocks = 0;
     uint32_t modified = 0;  // seconds since 2000-01-01, as the card stores it
+    std::string file;       // its .gci in the card folder
 };
 
 // The saves in a card folder. Empty if there is no such folder.
@@ -34,3 +35,13 @@ bool card_backup(const std::string& card, const std::string& dir, int keep);
 // Puts a copy's saves in the card's place, after copying the card itself (so a restore can be
 // undone). The card must be remounted after (card_remount).
 bool card_restore(const std::string& backup, const std::string& card, const std::string& dir, int keep);
+
+// Puts the save `gci` (a Dolphin export, say) on the card, after copying the card; a save
+// with the same game and name is replaced. Empty if it went in, else what is wrong with it:
+// "not a save" (too short, or its size is not its blocks'), or "another game" (with
+// `game` set, a save for another disc). Remount after.
+std::string card_import(const std::string& gci, const std::string& game, const std::string& card,
+                        const std::string& dir, int keep);
+
+// Takes the save in `file` (CardFile::file) off the card, after copying the card. Remount after.
+bool card_delete(const std::string& file, const std::string& card, const std::string& dir, int keep);

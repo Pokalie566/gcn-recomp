@@ -455,6 +455,8 @@ bool ui_init(SDL_Window* win, const std::string& dir, const std::string& lang) {
     m.BindEventCallback("launcher", [](H, Rml::Event&, Args) { act(UI_LAUNCHER); });
     m.BindEventCallback("backup", [](H, Rml::Event&, Args) { act(UI_BACKUP); });
     m.BindEventCallback("restore", [](H, Rml::Event&, Args a) { if (!g_in_game && !a.empty()) act(UI_RESTORE, a[0].Get<int>()); });
+    m.BindEventCallback("delete_save", [](H, Rml::Event&, Args a) { if (!g_in_game && !a.empty()) act(UI_DELETE_SAVE, a[0].Get<int>()); });
+    m.BindEventCallback("import_save", [](H, Rml::Event&, Args) { if (!g_in_game) act(UI_IMPORT_SAVE); });
     m.BindEventCallback("open_saves", [](H, Rml::Event&, Args) { act(UI_OPEN_SAVES); });
     m.BindEventCallback("settings", [](H, Rml::Event&, Args) { show(g_settings); });
     m.BindEventCallback("saves", [](H, Rml::Event&, Args) { show(g_saves); });
