@@ -26,7 +26,8 @@ static void pe_update_irq() {
 }
 
 void pe_signal_token(uint16_t token, bool interrupt) {
-    if (getenv("GCN_TOKLOG")) fprintf(stderr, "[tok] %04X%s\n", token, interrupt ? " int" : "");
+    static const bool log = getenv("GCN_TOKLOG") != nullptr;
+    if (log) fprintf(stderr, "[tok] %04X%s\n", token, interrupt ? " int" : "");
     g_pe_token = token;
     if (interrupt) { g_pe_ctrl |= PE_TOKEN_INT; pe_update_irq(); }
 }

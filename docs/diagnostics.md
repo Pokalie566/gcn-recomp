@@ -129,7 +129,9 @@ the game, and the benchmark's default). `GCN_CLOCKLOG=1` prints once per virtual
 virtual and host time compare and the work per presented frame.
 
 `GCN_FRAMETIME=1` prints a line per frame from the GX bridge: the guest's time for the
-frame, its draws, vertex bytes and EFB copies, and how long it waited on the GPU side.
+frame, its draws, vertex bytes and EFB copies, and how long it waited on the GPU side. The GPU
+side adds, once a second, how many frames it showed (`[present] N frames/s`, the
+in-between frames of 60 fps included).
 
 ## Finding a draw or a function
 

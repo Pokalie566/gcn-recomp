@@ -49,6 +49,15 @@ void feed(const gx::Chunk& c) { aurora::gx::fifo::write_data(c.bytes.data(), (ui
 void end() {
     aurora_end_frame();
     g_open = false;
+    // GCN_FRAMETIME: also the frames shown, once a second.
+    static const bool log = getenv("GCN_FRAMETIME") != nullptr;
+    static Time since = std::chrono::steady_clock::now();
+    static int shown;
+    if (log && ++shown && std::chrono::steady_clock::now() - since >= std::chrono::seconds(1)) {
+        fprintf(stderr, "[present] %d frames/s\n", shown);
+        shown = 0;
+        since = std::chrono::steady_clock::now();
+    }
 }
 
 void dump_frame(bool between) {

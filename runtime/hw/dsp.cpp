@@ -141,7 +141,8 @@ static void aid_start_block() {
 static void aid_block_done() {
     uint32_t bytes = g_aid_blocks_left * 32;
     static int n;
-    if (getenv("GCN_AXSTATS") && n++ % 400 == 0) fprintf(stderr, "[aid] block addr=%08X bytes=%u ctrl=%04X\n", g_aid_cur_addr, bytes, g_aid_ctrl);
+    static const bool stats = getenv("GCN_AXSTATS") != nullptr;
+    if (stats && n++ % 400 == 0) fprintf(stderr, "[aid] block addr=%08X bytes=%u ctrl=%04X\n", g_aid_cur_addr, bytes, g_aid_ctrl);
     bytes = dma_fit("AI", g_aid_cur_addr, bytes);
     if (bytes) audio_push_dma((const int16_t*)phys_ptr(g_aid_cur_addr), bytes / 4);
     g_aid_blocks_left = 0;
