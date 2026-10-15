@@ -14,7 +14,6 @@
 #include "runtime.h"
 #include "game_module.h"
 #include "platform.h"
-#include "input_log.h"
 #include <atomic>
 #include <condition_variable>
 #include <mutex>
@@ -223,7 +222,6 @@ uint32_t dec_read(CPU* c) {
 // Interrupts
 // ---------------------------------------------------------------------------
 extern std::atomic<uint32_t> g_pi_intsr, g_pi_intmr;
-extern std::atomic<uint64_t> g_next_event_at;
 
 static void irq_deliver(CPU* c, uint32_t exc) {
     uint32_t ctx = mem_r32(0x800000D4);  // OSCurrentContext
@@ -247,7 +245,6 @@ static void irq_deliver(CPU* c, uint32_t exc) {
 
 extern "C" void irq_poll(CPU* c) {
     if (g_quit) plat_thread_exit();
-    debug_guest_check("interrupt poll");
     clock_pace();
     events_run_due();
     uint64_t now = now_ticks();
@@ -261,21 +258,7 @@ extern "C" void irq_poll(CPU* c) {
     irq_deliver(c, 8);
 }
 
-// Background ticker for the host clock: asks for a poll when a timed event or the
-// decrementer is due. The virtual clock needs none; the back-edge count does it.
-static void ticker_main() {
-    while (!g_quit) {
-        uint64_t now = now_ticks();
-        if (g_next_event_at.load() <= now || g_dec_deadline.load() <= now) irq_request();
-        std::this_thread::sleep_for(std::chrono::microseconds(200));
-    }
-}
-
 void threads_start_boot(uint32_t entry) {
-    if (!clock_is_virtual()) {
-        static std::thread ticker(ticker_main);
-        ticker.detach();
-    }
     HostThread* h = new_host_thread();
     // Fake a context-free start: run entry directly on a host thread.
     struct Boot { static void* main(void* arg) {
@@ -292,25 +275,6 @@ void threads_start_boot(uint32_t entry) {
         fatal("could not start the boot thread");
 }
 
-static GuestCheck g_guest_check;
-void debug_set_guest_check(GuestCheck fn) { g_guest_check = fn; }
-
-#ifdef GCN_GUEST_CHECKS
-uint32_t gx_frames_submitted();
-void debug_dump_threads();
-void debug_guest_check(const char* where) {
-    if (!g_guest_check) return;
-    const char* what = g_guest_check();
-    if (!what) return;
-    fprintf(stderr, "\nGUEST CHECK FAILED at %s, frame %u, guest time %.4f s:\n  %s\n", where,
-            (unsigned)gx_frames_submitted(), (double)now_ticks() / TB_FREQ, what);
-    input_log_end();
-    debug_dump_threads();
-    if (getenv("GCN_GUEST_CHECK_CONTINUE")) { g_guest_check = nullptr; return; }
-    plat_exit_now(3);
-}
-#endif
-
 void threads_request_quit() {
     g_quit = true;
     irq_request();
@@ -323,31 +287,16 @@ void threads_request_quit() {
 const char* func_name(uint32_t addr);
 
 void debug_dump_fifo();
-void debug_print_counts();
 void debug_dump_threads() {
     if (!g_mem) return;   // stopped before the guest had any memory: in the launcher
     debug_dump_fifo();
-    if (const char* e = getenv("GCN_PEEK")) {
-        std::string s = e;
-        size_t p = 0;
-        while (p < s.size()) {
-            size_t q = s.find(',', p);
-            if (q == std::string::npos) q = s.size();
-            uint32_t a = (uint32_t)strtoul(s.substr(p, q - p).c_str(), nullptr, 16);
-            fprintf(stderr, "[peek] %08X = %08X\n", a, mem_r32(a));
-            p = q + 1;
-        }
-    }
-#ifdef GCN_WATCH
-    debug_print_counts();
-#endif
     for (auto* h : g_threads) {
         CPU* c = &h->cpu;
         fprintf(stderr, "=== host thread %d (run=%d) lr=%08X msr=%08X ctr=%08X\n", h->id, h->run, c->lr, c->msr, c->ctr);
         for (int i = 0; i < 32; i += 8)
             fprintf(stderr, "  r%-2d %08X %08X %08X %08X %08X %08X %08X %08X\n", i, c->r[i], c->r[i + 1], c->r[i + 2], c->r[i + 3],
                     c->r[i + 4], c->r[i + 5], c->r[i + 6], c->r[i + 7]);
-#ifdef GCN_CALL_TRACE
+#ifdef GCN_TRACE_CALLS
         fprintf(stderr, "  guest call stack (innermost first):\n");
         uint32_t want = getenv("GCN_TRACE_DEPTH") ? (uint32_t)atoi(getenv("GCN_TRACE_DEPTH")) : 40;
         // The depth counts past the end of the array so that deep recursion still unwinds
@@ -365,39 +314,6 @@ void debug_dump_threads() {
 #endif
     }
 }
-
-#ifdef GCN_WATCH
-// Debug build only: GCN_WATCH_ADDR=<hex guest address> reports every change to that word.
-static std::vector<std::pair<uint32_t, uint64_t>> g_count_fns = [] {
-    std::vector<std::pair<uint32_t, uint64_t>> v;
-    if (const char* e = getenv("GCN_COUNT")) {
-        std::string s = e;
-        size_t p = 0;
-        while (p < s.size()) {
-            size_t q = s.find(',', p);
-            if (q == std::string::npos) q = s.size();
-            v.push_back({(uint32_t)strtoul(s.substr(p, q - p).c_str(), nullptr, 16), 0});
-            p = q + 1;
-        }
-    }
-    return v;
-}();
-void debug_print_counts() {
-    for (auto& kv : g_count_fns) fprintf(stderr, "[count] %08X %s: %llu\n", kv.first, func_name(kv.first), (unsigned long long)kv.second);
-}
-extern "C" void debug_watch_check(CPU* c, uint32_t fn) {
-    for (auto& kv : g_count_fns) if (kv.first == fn) kv.second++;
-    static uint32_t addr = [] { const char* e = getenv("GCN_WATCH_ADDR"); return e ? (uint32_t)strtoul(e, nullptr, 16) : 0u; }();
-    static uint32_t last = 0xFFFFFFFF;
-    if (!addr) return;
-    uint32_t v = mem_r32(addr);
-    if (v != last) {
-        fprintf(stderr, "[watch] %08X: %08X -> %08X at %s %08X %s (lr %08X)\n", addr, last, v,
-                (fn & 1) ? "store" : "entry", fn & ~1u, (fn & 1) ? "" : func_name(fn), c->lr);
-        last = v;
-    }
-}
-#endif
 
 // Periodically report which game-code functions (below the SDK at 0x80100000) are active.
 uint32_t gx_frames_submitted();

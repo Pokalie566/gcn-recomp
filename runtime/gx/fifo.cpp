@@ -158,30 +158,7 @@ void gp_write16(uint16_t v) {
     g_gp_buf[g_gp_len++] = (uint8_t)v;
     if (g_gp_len >= 32) gp_flush32();
 }
-#ifdef GCN_CALL_TRACE
-const char* func_name(uint32_t addr);
-// GCN_GP_STACK=<hex word> prints the guest call stack the first few times that word is
-// pushed into the write-gather pipe. Unlike the drain side, the guest is still inside the
-// code that wanted the command here, so this names it. Needs GCN_TRACE_CALLS.
-static void gp_stack_probe(uint32_t v) {
-    static const char* want = getenv("GCN_GP_STACK");
-    if (!want) return;
-    static const uint32_t w = (uint32_t)strtoul(want, nullptr, 16);
-    if (v != w) return;
-    static int shown;
-    if (shown++ >= 3) return;
-    CPU* c = cpu_current();
-    fprintf(stderr, "[gp] word %08X written; guest call stack innermost first:\n", v);
-    const uint32_t have = c && c->depth < 256 ? c->depth : 0;
-    for (uint32_t i = 1; i <= have; i++)
-        fprintf(stderr, "[gp]   %08X %s\n", c->stack[have - i], func_name(c->stack[have - i]));
-}
-#endif
-
 void gp_write32(uint32_t v) {
-#ifdef GCN_CALL_TRACE
-    gp_stack_probe(v);
-#endif
     g_gp_buf[g_gp_len++] = v >> 24;
     g_gp_buf[g_gp_len++] = (uint8_t)(v >> 16);
     g_gp_buf[g_gp_len++] = (uint8_t)(v >> 8);
@@ -254,8 +231,9 @@ void pe_write16(uint32_t off, uint16_t v) {
     g_pe_regs[(off & 0x3F) >> 1] = v;
 }
 
-GCN_WEAK uint32_t efb_peek(uint32_t addr) { return 0; }
-GCN_WEAK void efb_poke(uint32_t addr, uint32_t v) {}
+// The CPU's direct access to the EFB is not emulated: it reads 0 and writes nothing.
+uint32_t efb_peek(uint32_t) { return 0; }
+void efb_poke(uint32_t, uint32_t) {}
 
 void debug_dump_fifo() {
     fprintf(stderr, "FIFO: CP cr=%04X sr=%04X base=%08X end=%08X wptr=%08X rptr=%08X rwdist=%08X bp=%08X | PI base=%08X end=%08X wptr=%08X | pending=%zu gp=%u\n",

@@ -29,18 +29,18 @@ gcn_add_game(
   DISC_ID GM8E01
   DOL_SHA1 39a2f928159ad46491e9b1ef0a72613d91e0cc40
   SYMBOLS ${CMAKE_SOURCE_DIR}/analysis/symbols.txt
-  TABLES ${CMAKE_SOURCE_DIR}/recomp
-  FPS 60)
+  TABLES ${CMAKE_SOURCE_DIR}/recomp)
 ```
 
-That defines the game executable and a headless benchmark (`<name>_bench`). Neither executable holds any game code, and both build without a
-disc: they load the recompiled game as a module, `<name>_game` (`runtime/game_module.h`),
-which the build makes beside them when it has a disc image, and which they otherwise
-prepare from the player's disc on first run (`runtime/prepare.h`).
+That defines the game executable. It holds no game code and builds without a disc: it loads
+the recompiled game as a module, `<name>_game` (`runtime/game_module.h`), which it prepares
+from the player's disc on first run (`runtime/prepare.h`) with the toolchain -- zig and a
+standalone Python, pinned in `tools/fetch_toolchain.cmake` -- that an app carries and that a
+development build fetches into its build directory. The machine needs nothing else.
 The game project provides:
 
 - `analysis/symbols.txt` — the DOL's function layout in decomp-toolkit's format, either
-  from `dtk dol split` (`tools/fetch_dtk.sh` downloads it) or from a decompilation project.
+  from `dtk dol split` or from a decompilation project.
 - `recomp/hle.txt` — functions whose body the runtime replaces (`OSSaveContext`,
   `OSLoadContext`, `OSReport`, `OSPanic` at minimum).
 - `recomp/special_calls.txt` — the address of `OSSaveContext`, whose call sites become
@@ -61,8 +61,8 @@ runs the display at 50 Hz when the game sets PAL.
 
 ## Playing
 
-`<name> [image.iso]` runs the game; with no path it finds the image the build was
-configured with. Options for the player:
+`<name> [image.iso]` runs the game; with no path it takes the one in its settings, else the
+first `.iso` or `.ciso` in `rom/`. Options for the player:
 
 | Option | |
 |---|---|
@@ -115,18 +115,18 @@ the stick's y instead) -- which the environment variables of the same names over
 ## Layout
 
 - `recomp/`: `recomp.py` drives the translation; `ppc.py` turns each instruction into C;
-  `dol.py` reads DOLs, `.iso` and `.ciso` images and symbol files; `extract_dol.py` pulls
-  and verifies the DOL.
+  `dol.py` reads DOLs and symbol files; `test_ppc.py` runs what the translator writes.
 - `runtime/`: the GameCube in software. `recomp.h` is the contract with generated code.
   `cpu.cpp`, `threads.cpp` and `hle_os.cpp` are the CPU and OS; `hw/` the hardware
   registers; `gx/` the GX stream translated for Aurora and its GPU side; `main.cpp` the
-  frontend (Aurora, SDL3, the menus) and `bench_main.cpp` the benchmark.
+  frontend (Aurora, SDL3, the menus).
 - `patches/`: fixes to Aurora not yet upstream, applied to its pinned commit at configure
   time.
+- `tools/fetch_toolchain.cmake`: the toolchain that prepares the game.
 - `docs/`: working notes on diagnostics and the renderer.
 
 ## Requirements
 
-CMake 3.20+, Ninja, Python 3, a C++20 compiler. Aurora, SDL3 and Dawn (prebuilt) are
-fetched and built by CMake; on Linux SDL3 needs the X11/Wayland/audio development
-packages (the list is in lm-recomp's CI). On macOS: `brew install cmake ninja python`.
+CMake 3.20+, Ninja, a C++20 compiler. Aurora, SDL3, Dawn (prebuilt), nod (prebuilt) and the
+toolchain are fetched by CMake; on Linux SDL3 needs the X11/Wayland/audio development packages
+(lm-recomp's `tools/deps-linux.sh` installs them). On macOS: `brew install cmake ninja`.

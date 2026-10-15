@@ -19,9 +19,6 @@
 #define GCN_UNLIKELY(x) (!!(x))
 
 #define GCN_PRINTF_FMT(fmt_idx, first_arg)
-/* COFF has no weak symbols in the ELF sense. Nothing overrides these today, so a
-   plain definition is correct; see GCN_WEAK's use in gx/fifo.cpp. */
-#define GCN_WEAK
 
 static __inline uint32_t GCN_CLZ32(uint32_t v) {
     unsigned long i;
@@ -38,13 +35,6 @@ static __inline uint32_t GCN_CLZ32(uint32_t v) {
 #define GCN_UNLIKELY(x) __builtin_expect(!!(x), 0)
 
 #define GCN_PRINTF_FMT(fmt_idx, first_arg) __attribute__((format(printf, fmt_idx, first_arg)))
-
-/* Clang on COFF only emulates weak via /alternatename, which we don't need. */
-#if defined(_WIN32)
-#define GCN_WEAK
-#else
-#define GCN_WEAK __attribute__((weak))
-#endif
 
 static inline uint32_t GCN_CLZ32(uint32_t v) { return v ? (uint32_t)__builtin_clz(v) : 32u; }
 

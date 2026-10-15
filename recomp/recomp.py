@@ -59,21 +59,6 @@ def load_list(path):
     return s
 
 
-STORE_OPS = {36, 37, 38, 39, 44, 45, 47, 52, 53, 54, 55, 60, 61}
-STORE_XO31 = {151, 183, 215, 247, 407, 439, 662, 918, 150, 663, 695, 727, 759, 983, 725, 1014}
-
-
-def is_store(i):
-    op = i >> 26
-    if op in STORE_OPS:
-        return True
-    if op == 31 and ((i >> 1) & 0x3FF) in STORE_XO31:
-        return True
-    if op == 4 and ((i >> 1) & 0x3F) in (7, 39):
-        return True
-    return False
-
-
 class Func:
     def __init__(self, addr, size, name):
         self.addr = addr
@@ -261,8 +246,6 @@ def main():
                     last_uncond = True
                 if (i >> 26) == 31 and ((i >> 1) & 0x3FF) == 146:
                     code += ' IRQ_CHECK();'
-                if is_store(i):
-                    code += f' WATCH_STORE(0x{pc:08X}u);'
                 out.append(f'\t/* {pc:08X} {i:08X} */ {code}')
                 continue
 

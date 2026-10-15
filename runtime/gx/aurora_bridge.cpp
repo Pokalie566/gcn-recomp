@@ -28,8 +28,8 @@
 // projection squeezed back to 4:3. At 4:3 none of this changes a byte.
 //
 // The result goes to the GPU side in chunks (aurora_bridge.h); this file never calls Aurora,
-// so the benchmark can take the same stream with no GPU at all. The copy to the external
-// framebuffer (BP 0x52 with the display bit) ends a frame.
+// so a run with no GPU at all (--headless, the tests) can take the same stream. The copy to
+// the external framebuffer (BP 0x52 with the display bit) ends a frame.
 #include "aurora_bridge.h"
 #include "../runtime.h"
 #include "gx.h"
@@ -314,8 +314,6 @@ void end_frame() {
     g_draws = g_vtx_bytes = g_copies = 0;
     g_wait_ms = 0;
     g_frames_submitted++;
-    debug_guest_check("frame");
-    heap_trace_frame(g_frames_submitted.load());
     hand_over(true);
     // At most one frame ahead of the GPU side, as the hardware's FIFO would hold it.
     {

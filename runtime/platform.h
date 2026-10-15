@@ -37,8 +37,6 @@ long plat_utc_offset_seconds();
 bool plat_readable(const char* path);
 // Create `path` and any missing parents. Ignores already-exists.
 void plat_make_dirs(const std::string& path);
-// Replace `to` with `from`, overwriting an existing file.
-bool plat_replace_file(const char* from, const char* to);
 // First entry in `dir` whose name ends with `suffix` (case-insensitive), or "".
 std::string plat_find_file(const char* dir, const char* suffix);
 

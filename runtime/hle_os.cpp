@@ -129,9 +129,6 @@ extern "C" void hle_OSPanic(CPU* c) {
     std::string report = "guest panic: " + file + ":" + std::to_string(line) + ": " + msg +
                          "\nguest backtrace (innermost first):\n";
     guest_backtrace(c, report, 16);
-    // The heaps too: the panic this was written for is an allocation failing, and the
-    // question that follows is whether the heap was exhausted or merely fragmented.
-    heap_report(report);
     fprintf(stderr, "%s", report.c_str());   // into the log (crash_log.h) with the rest
     fatal("guest panic: %s:%u: %s", file.c_str(), line, msg.c_str());
 }

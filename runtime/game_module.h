@@ -2,8 +2,7 @@
 //
 // The executable holds the runtime and the game project's own code, and nothing translated
 // from the game: that is what lets it be handed to anyone. The game's code is a shared
-// library built from the player's own disc -- by prepare.h on their machine, or by CMake
-// beside the executable in a development build -- and loaded here.
+// library built from the player's own disc, on their machine, by prepare.h, and loaded here.
 //
 // The runtime reads five things from it: the four recomp.py writes to recomp_table.c (the
 // function table, its length and the bounds of the code it covers) and the original body of
@@ -30,19 +29,16 @@ std::string game_module_filename();
 // Loads `path` as the game. False, with the reason, if it is missing or not a game module.
 bool game_module_load(const std::string& path, std::string* err);
 
-// Which module to load when nothing else says: GCN_GAME_MODULE, else a development build's
-// beside the executable when the disc's main.dol (`dol_sha1`) is the one it was built from,
-// else `prepared` if it exists. Empty when there is none.
-std::string game_module_find(const std::string& prepared, const std::string& dol_sha1);
+// Which module to load: GCN_GAME_MODULE if set, else `prepared` if it exists. Empty when
+// there is none.
+std::string game_module_find(const std::string& prepared);
 
 // ---- Building one ----
-// With the app's own toolchain (tools/fetch_toolchain.sh): zig, in <resources>/toolchain or
-// where GCN_TOOLCHAIN says, so the player needs nothing installed. A development build
-// without one uses the machine's compiler: cc on macOS and Linux, Visual Studio's C++ tools
-// on Windows (found with vswhere).
-std::string toolchain_dir();   // empty without one
-// False, with what is missing, if there is no compiler at all.
-bool game_module_compiler_present(std::string* missing);
+// With the toolchain (tools/fetch_toolchain.cmake): zig, and the Python recomp.py runs on, so
+// that the machine needs nothing installed. An app carries it in its resources, a
+// development build has the one CMake fetched into its build directory; GCN_TOOLCHAIN=<dir>
+// points elsewhere.
+std::string toolchain_dir();
 
 // Compiles `sources` and links them as the module `out`, the way a game module must be
 // built: position-independent, the runtime's symbols left for the executable to provide --

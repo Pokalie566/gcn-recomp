@@ -11,7 +11,7 @@
 // What it needs ships with the app (prepare_sources): the recompiler, the tables, the symbol
 // table, the runtime headers the generated code includes -- and the toolchain that runs them,
 // zig and Python (game_module.h, toolchain_dir), so that the machine needs nothing. A
-// development build without it uses the machine's C compiler and python3.
+// development build takes them from the source tree and its build directory.
 //
 // The result lives in game/<dol sha1>-<inputs>/ under save_path, the second half a hash of everything
 // that went into it, so that an app update that changes the tables prepares again.
@@ -42,9 +42,6 @@ bool prepare_check_disc(const char* iso, std::string* dol_sha1, std::string* err
 // Where the module prepared from a main.dol of this SHA-1 is, ready or not.
 std::string prepare_module_path(const std::string& dol_sha1);
 
-// Whether the tools are there: a C compiler and Python. `missing` says which are not.
-bool prepare_tools_present(std::string* missing);
-
 // Where preparing keeps its copy of the disc (disc_copy_ciso): the image to play from then on.
 std::string prepare_disc_copy_path(const std::string& dol_sha1);
 
@@ -54,7 +51,7 @@ std::string prepare_disc_copy_path(const std::string& dol_sha1);
 bool prepare_game(const char* iso, std::string* module, std::string* disc_copy, std::string* err,
                   const std::function<void(float, const std::string&)>& progress);
 
-// What a frontend without a launcher does at startup: load the game module -- a development
-// build's, else the one prepared for this disc, preparing it first if there is none, or
-// always with `force` -- reporting on stderr. False, with the reason printed, if it cannot.
+// What a frontend without a launcher does at startup: load the game module prepared for this
+// disc, preparing it first if there is none, or always with `force` -- reporting on stderr.
+// False, with the reason printed, if it cannot.
 bool game_module_ensure(const char* iso, bool force);

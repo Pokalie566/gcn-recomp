@@ -134,7 +134,7 @@ void check(const LauncherEnv& env, const Settings& cur) {
             }
         }
     }
-    g_module = disc_ok ? game_module_find(prepare_module_path(sha1), sha1) : "";
+    g_module = disc_ok ? game_module_find(prepare_module_path(sha1)) : "";
     if (disc_ok) {
         if (l.preparing) l.checks.push_back({"Prepared", "busy", l.progress_text});
         else if (!g_module.empty()) l.checks.push_back({"Prepared", "ok", ui_tr("Ready to play")});

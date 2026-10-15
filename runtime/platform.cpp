@@ -142,10 +142,6 @@ long plat_utc_offset_seconds() {
 // ---- files ----
 bool plat_readable(const char* path) { return path && *path && _access(path, 4) == 0; }
 
-bool plat_replace_file(const char* from, const char* to) {
-    return MoveFileExA(from, to, MOVEFILE_REPLACE_EXISTING) != 0;
-}
-
 // ---- modules and processes ----
 std::string plat_executable_path() {
     char buf[MAX_PATH];
@@ -312,8 +308,6 @@ long plat_utc_offset_seconds() {
 }
 
 bool plat_readable(const char* path) { return path && *path && access(path, R_OK) == 0; }
-
-bool plat_replace_file(const char* from, const char* to) { return rename(from, to) == 0; }
 
 // ---- modules and processes ----
 #include <dlfcn.h>

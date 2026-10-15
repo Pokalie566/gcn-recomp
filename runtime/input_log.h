@@ -1,15 +1,12 @@
 // Input logging and replay.
 //
-// A run leaves behind a record of every controller state the game polled, keyed by the
-// poll's sequence number, so that the same route can be played again without a human at
-// the controls -- "get me to the boss" rather than scripting a handful of presses. With
-// the virtual clock (runtime.h) the guest's timeline is a function of its own execution,
-// so the Nth poll of a replay is the same instant in the game as the Nth poll of the
-// recording, and the replay is exact. The log also records the run's start time, which
-// the replay feeds to the RTC, so even the calendar looks the same to the game.
-//
-// Version 1 logs (keyed by presented frame, recorded under the host clock) still load;
-// they replay approximately, as they always did.
+// A run started with --input-log=<dir> leaves behind a record of every controller state
+// the game polled, keyed by the poll's sequence number, so that the same route can be played
+// again without a human at the controls -- "get me to the boss" rather than scripting a
+// handful of presses. With the virtual clock (runtime.h) the guest's timeline is a function
+// of its own execution, so the Nth poll of a replay is the same instant in the game as the
+// Nth poll of the recording, and the replay is exact. The log also records the run's start
+// time, which the replay feeds to the RTC, so even the calendar looks the same to the game.
 //
 // A log is a directory:
 //   inputs.txt       one line per change of pad state (see the file's own header)
@@ -33,7 +30,7 @@ bool input_replay_load(const std::string& dir, std::string& card_out);
 
 // Marks where the run ended: the log's last line is otherwise the last *change*, and a
 // replay would hand control back to the live pad there, which can be well before the end.
-// Called on a normal exit and from the crash and check handlers, so that a replay holds
+// Called on a normal exit and from the crash handlers, so that a replay holds
 // the last state up to the instant the run stopped.
 void input_log_end();
 

@@ -7,7 +7,7 @@ are `GCN_*`; none of this is needed to play.
 ## State, settings and pausing
 
 `GCN_SAVE_DIR=<dir>` keeps this machine's state for the game somewhere else than `saves/`:
-memory card, settings.ini, shader cache, input logs, the prepared game. A scripted run
+memory card, settings.ini, shader cache, the prepared game. A scripted run
 points it at an empty directory, so that it neither reads the player's settings nor touches
 their card.
 
@@ -27,33 +27,33 @@ every 16 frames, as a player would; `shot:<name>` in the list writes the window 
 sets the internal scale to 3 and turns on 16:9, which settings.ini and the frames after the
 pause must both show. A run that starts from the launcher and prepares the game from
 scratch, as a player's first would, is `drop:<iso>,Down,Return,Return` with an empty
-`GCN_SAVE_DIR` and the executable alone in a directory, without its module.
+`GCN_SAVE_DIR`.
 
 The launcher is skipped by `--no-launcher` and by any scripted run (`GCN_INPUT`, `--replay`,
-`--headless`, `--prepare`), which then needs the disc and the game's module to be there.
+`--headless`, `--prepare`), which then needs the disc to be there, and prepares the game first
+if it must, reporting on stderr.
 
 ## The game module
 
-The executables load the recompiled game at startup (`runtime/game_module.h`): the
-`GCN_GAME_MODULE=<file>` module if set, else the one beside the executable, else the one
-prepared for the disc in `saves/game/<dol sha1>-<inputs>/`, preparing it first if there is none
-(`runtime/prepare.h`, with its tools' output in `prepare.log` beside it). `--prepare` prepares
-again and quits. `GCN_RESOURCES=<dir>` points the preparation at an app's copy of the
-recompiler, tables, symbols and headers (`recomp/`, `tables/`, `symbols.txt`, `include/`)
-instead of the source tree.
+The executable loads the recompiled game at startup (`runtime/game_module.h`): the
+`GCN_GAME_MODULE=<file>` module if set, else the one prepared for the disc in
+`saves/game/<dol sha1>-<inputs>/`, preparing it first if there is none (`runtime/prepare.h`,
+with its tools' output in `prepare.log` beside it). `--prepare` prepares again and quits;
+`GCN_KEEP_GEN=1` keeps the generated C there, in `gen/`, to read. `GCN_RESOURCES=<dir>`
+points the preparation at an app's copy of the recompiler, tables, symbols and headers
+(`recomp/`, `tables/`, `symbols.txt`, `include/`) instead of the source tree, and
+`GCN_TOOLCHAIN=<dir>` at another toolchain than the build's.
 
 ## Input logging and replay
 
-Every run of the desktop frontend records the controller state the guest polled, keyed by
-the poll's sequence number, into `saves/inputs/<timestamp>/inputs.txt`, with a snapshot of
-the memory card beside it. The path is printed at startup. `--no-input-log` turns it off;
-`--input-log=<dir>` chooses the directory.
+`--input-log=<dir>` records the controller state the guest polled, keyed by the poll's
+sequence number, into `<dir>/inputs.txt`, with a snapshot of the memory card beside it.
 
 `--replay=<dir>` plays a log back: the guest reads the logged controller instead of the live
 one until the log runs out, then the live controller takes over. The run uses a scratch copy
 of the logged card (`card_replay/` in the log directory), so the real card is never
-touched and the replay sees the same saves the original did. A replay is still recorded as a
-new log, so a route can be extended by replaying it and then playing on.
+touched and the replay sees the same saves the original did. A replay can itself be recorded
+(`--input-log` again), so a route can be extended by replaying it and then playing on.
 
 A replay is exact. Guest time is virtual (see "The clock" below): it is a function of what
 the guest executes, not of the host's clock, so the Nth pad poll of the replay is the same
@@ -64,14 +64,11 @@ bit for bit, including a crash at its end, unless the runtime itself has a nonde
 path -- which is then the bug to find. `--fast` runs a replay as fast as the host allows;
 the game still sees 60 Hz.
 
-Logs recorded before the virtual clock (version 1, keyed by presented frame) still load and
-replay approximately, as they always did.
-
 The log format is text: a header (version, game, start time and its epoch), then one line
 per change of a channel's state --
 `poll frame chan connected buttons stick_x stick_y cstick_x cstick_y trig_l trig_r`, in
-hex -- and, when the run ended in a way the runtime saw (a normal exit, a fault, a failed
-guest check or an interrupt), a final `# end <poll> <frame>`. A replay holds the last
+hex -- and, when the run ended in a way the runtime saw (a normal exit, a fault or an
+interrupt), a final `# end <poll> <frame>`. A replay holds the last
 state up to that end before handing over to the live pad; without the marker it hands over
 at the last change, which can be well before where the run stopped, so a log that lacks
 one (a run killed from outside) can be given one by hand. Lines can be edited or written
@@ -103,20 +100,9 @@ With `--interpolate`, an in-between frame is dumped as `frame_NNNNN_i.png`, befo
 NNNNN; `GCN_INTERPOLATE=force` makes one for every frame of an unpaced run, and
 `GCN_INTERPLOG=1` prints each frame's verdict. See graphics.md, "Aurora".
 
-## Measuring the guest
-
-`<game>_bench` runs the game with no graphics, audio or input, unpaced, and reports how fast
-the guest advances; `--warmup=N` (default 8) excludes boot from the steady-state figure. Its
-last column is the guest's work per presented frame in loop back-edges, the figure the
-virtual clock's tick-per-edge constant is tuned against.
-
-`GCN_RAMSNAP=<dir>` (with `GCN_RAMSNAP_EVERY`, `GCN_RAMSNAP_RANGE=a-b`) writes the low 8 MB
-of guest RAM every so many presented frames, numbered as the frame dumps are: diffing two
-snapshots taken in known game states is how a game variable gets found.
-
 ## The clock
 
-Guest time is virtual by default. Every backward branch in recompiled code counts one
+Guest time is virtual. Every backward branch in recompiled code counts one
 back-edge, and the time base is that count times a constant (`TICKS_PER_EDGE` in
 `cpu.cpp`); events are due when the count reaches them, and the SDK's idle spin
 (`idle.txt` in the game's tables) jumps the count to the next event instead of iterating.
@@ -126,10 +112,7 @@ time depends only on what it executed, which is what makes replays exact; the co
 a scene heavier than a frame's budget of back-edges looks to the game like a dropped frame,
 at a threshold set by the constant rather than by the real console.
 
-`GCN_CLOCK=host` restores wall-clock time (the ticker thread polls for due events every
-200 µs). `GCN_TIMESCALE=N` paces virtual time at N× real time (0: unpaced; `--fast` on
-the game, and the benchmark's default). `GCN_CLOCKLOG=1` prints once per virtual second how
-virtual and host time compare and the work per presented frame.
+`GCN_TIMESCALE=N` paces virtual time at N× real time (0: unpaced, as `--fast`).
 
 `GCN_FRAMETIME=1` prints a line per frame from the GX bridge: the guest's time for the
 frame, its draws, vertex bytes and EFB copies, and how long it waited on the GPU side. The GPU
@@ -147,30 +130,17 @@ in-between frames of 60 fps included).
   copies (rect, format, destination) and every texture it loads (address, size, format), so
   a copy can be followed to the draws that sample it. Frame numbers are the bridge's
   (`g_frames_submitted`): one less than the dump's.
-- `GCN_PEEK=a,b` prints those guest addresses in the crash dump.
 - `--sample` reports once a second which guest functions each guest thread is in, by
   walking the guest's own stack; names come from the game's `symbols.txt`.
 - Build with `-DGCN_TRACE_CALLS=ON` to keep a real guest call stack, printed by the crash
-  dump (`GCN_TRACE_DEPTH` sets how many frames). Compiling with `-DGCN_WATCH` adds
-  `GCN_COUNT=addr,...` (call counts per function, printed on interrupt) and
-  `GCN_WATCH_ADDR=<hex>` (report every change to that word).
+  dump (`GCN_TRACE_DEPTH` sets how many frames).
 - `--log-all` enables every log category, including the DSP mailbox and DVD reads;
   `--log=exi,dsp` enables just those (`cpu os hw dvd gx vi si exi dsp ai thr`).
-- Build with `-DGCN_GUEST_CHECKS=ON` to call the game project's consistency check (a
-  function installed with `debug_set_guest_check`, which inspects the guest's own data
-  structures and reports the first thing wrong) at every interrupt poll, after every
-  runtime write into guest memory (DVD, ARAM and locked-cache DMA) and at every presented
-  frame. The first failure prints what was wrong, where in the runtime it was noticed and
-  the thread dump, then exits (`GCN_GUEST_CHECK_CONTINUE=1` to carry on instead). Since a
-  replay is exact, the way to a heap corruption is: replay the run with the checks on,
-  read the corrupted word's address off the report, replay again on a `-DGCN_WATCH` build
-  with `GCN_WATCH_ADDR=<that>` and the store that did it is named. A check that fires
-  right after a DMA names the runtime itself.
 
 ## Panics and faults
 
 A game's `OSPanic` should be listed in its `hle.txt`: the replacement prints the message and
-a guest backtrace and the heaps, and exits, instead of spinning in `PPCHalt` looking like a
+a guest backtrace, and exits, instead of spinning in `PPCHalt` looking like a
 hang. A host fault inside guest memory prints the guest address and every thread's
 registers.
 
@@ -180,34 +150,3 @@ line there and a dialog for the player, shown by the executable started again wi
 `--crash-report=<text>` (the crashed process may not be able to draw). `GCN_CRASH_TEST=1`
 faults on purpose once the menus are up (`=fatal`: a fatal error); `GCN_CRASH_DIALOG=print`
 prints the dialog's text instead of showing it, `=0` shows nothing.
-
-## The guest heap
-
-The SDK's OSAlloc keeps no record of who owns a cell, so when a game panics on a failed
-`OSAllocFromHeap` the message is all there is. Two things fill that in, both in
-`runtime/heap_trace.cpp`:
-
-- Every panic report ends with the heaps walked out of guest memory: each heap's size, free
-  total, number of free blocks and largest free block, and the allocated total -- which
-  answers whether the heap was exhausted or fragmented. Any failed allocation prints the
-  same, whether or not the game then panics.
-- `GCN_HEAP=1` keeps a table of live cells keyed by the caller's return address and the one
-  above it (games reach the allocator through thin wrappers), and prints it grouped by
-  caller on any failed allocation or panic. `GCN_HEAP=<frames>` prints it every so many
-  presented frames, to watch a trend before the crash.
-
-Both need four one-line patches in the game's `patches.txt`, hooking `OSAllocFromHeap`'s
-entry and both of its returns and `OSFreeToHeap`'s entry; the entry hook takes the address
-of the SDK's `HeapArray` variable, which is where the report finds the heaps. Each line
-keeps the instruction it replaces -- the first instruction of `OSAllocFromHeap` is
-`mulli r0,r3,12` and `OSFreeToHeap`'s is `mflr r0`, and the returns are `blr`:
-
-```
-<OSAllocFromHeap>      heap_trace_alloc(c, <HeapArray var>); c->r[0] = (uint32_t)((int32_t)c->r[3] * 12);
-<its NULL return>      heap_trace_alloc_result(c, 0); RET();
-<its normal return>    heap_trace_alloc_result(c, 1); RET();
-<OSFreeToHeap>         heap_trace_free(c); c->r[0] = c->lr;
-```
-
-`HeapArray` is the small-data word `OSAllocFromHeap` loads first (`lwz r3, off(r13)`), and
-`r13` is set by `__start`. Without the hooks the panic report says the heaps were not traced.

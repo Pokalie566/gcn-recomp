@@ -5,7 +5,6 @@
 #include <atomic>
 #include <cstdlib>
 #include <filesystem>
-#include <fstream>
 #include <mutex>
 #include <thread>
 
@@ -37,143 +36,46 @@ bool game_module_load(const std::string& path, std::string* err) {
     return true;
 }
 
-#ifndef GCN_DOL_SHA1   // a test builds this file on its own
-#define GCN_DOL_SHA1 ""
-#endif
-
-std::string game_module_find(const std::string& prepared, const std::string& dol_sha1) {
+std::string game_module_find(const std::string& prepared) {
     if (const char* e = getenv("GCN_GAME_MODULE")) return e;
-    // A development build's, for its own disc's main.dol; another version's is prepared.
-    const std::string dev = plat_executable_dir() + "/" + game_module_filename();
-    if (dol_sha1 == GCN_DOL_SHA1 && plat_readable(dev.c_str())) return dev;
-    if (!prepared.empty() && plat_readable(prepared.c_str())) return prepared;
-    return {};
+    return plat_readable(prepared.c_str()) ? prepared : std::string();
 }
 
 // ---- Building one ----
 
+#ifndef GCN_RES_TOOLCHAIN
+#define GCN_RES_TOOLCHAIN ""   // a development build's: the one CMake fetched into its build directory
+#endif
+
 std::string toolchain_dir() {
     if (const char* t = getenv("GCN_TOOLCHAIN")) return t;
     if (const char* r = getenv("GCN_RESOURCES")) return std::string(r) + "/toolchain";
-    return {};
+    return GCN_RES_TOOLCHAIN;
 }
-
-// The toolchain's zig, which compiles C for this machine with nothing installed: empty
-// without one (a development build), and the system's compiler is used instead.
-static std::vector<std::string> zig_cc() {
-    const std::string dir = toolchain_dir();
-#ifdef _WIN32
-    const std::string zig = dir + "/zig/zig.exe";
-#else
-    const std::string zig = dir + "/zig/zig";
-#endif
-    if (dir.empty() || !plat_readable(zig.c_str())) return {};
-    return {zig, "cc"};
-}
-
-#ifdef _WIN32
-// Visual Studio's C++ tools, with no toolchain: the module then shares the executable's
-// MSVC C runtime exactly (setjmp/longjmp go across the two, recomp.h).
-static bool use_msvc() { return zig_cc().empty(); }
-#endif
 
 std::vector<std::string> game_module_cflags() {
 #ifdef _WIN32
-    std::vector<std::string> f = use_msvc()
-        ? std::vector<std::string>{"/O2", "/fp:precise", "/fp:except-", "/bigobj", "/MD", "/w", "/DGCN_MODULE_DLL"}
-        : std::vector<std::string>{"-std=gnu11", "-O2", "-fno-strict-aliasing", "-ffp-contract=off", "-w", "-DGCN_MODULE_DLL"};
+    std::vector<std::string> f = {"-std=gnu11", "-O2", "-fno-strict-aliasing", "-ffp-contract=off", "-w", "-DGCN_MODULE_DLL"};
 #else
     std::vector<std::string> f = {"-std=gnu11", "-O2", "-fPIC", "-fno-strict-aliasing", "-ffp-contract=off", "-w"};
 #endif
 #ifdef GCN_TRACE_CALLS
-    f.push_back(f[0][0] == '/' ? "/DGCN_TRACE_CALLS" : "-DGCN_TRACE_CALLS");
+    f.push_back("-DGCN_TRACE_CALLS");
 #endif
     return f;
-}
-
-#ifdef _WIN32
-// Visual Studio's environment script for 64-bit tools, if a Visual Studio with the C++ tools
-// is installed: vswhere is where every one since 2017 says where it is.
-static std::string vcvars() {
-    const char* pf = getenv("ProgramFiles(x86)");
-    const std::string vswhere = std::string(pf ? pf : "C:\\Program Files (x86)") + "\\Microsoft Visual Studio\\Installer\\vswhere.exe";
-    if (!plat_readable(vswhere.c_str())) return {};
-    const std::string out = (std::filesystem::temp_directory_path() / "gcn_vswhere.txt").string();
-    std::filesystem::remove(out);
-    if (plat_run({vswhere, "-latest", "-products", "*", "-requires", "Microsoft.VisualStudio.Component.VC.Tools.x86.x64",
-                  "-property", "installationPath"}, out.c_str()) != 0) return {};
-    std::ifstream in(out);
-    std::string dir;
-    std::getline(in, dir);
-    while (!dir.empty() && (dir.back() == '\r' || dir.back() == ' ')) dir.pop_back();
-    const std::string bat = dir + "\\VC\\Auxiliary\\Build\\vcvars64.bat";
-    return dir.empty() || !plat_readable(bat.c_str()) ? std::string() : bat;
-}
-
-
-// One script that sets up Visual Studio's tools, compiles every file (cl /MP, a compiler per
-// core) and links: the environment script is slow, so it runs once.
-static bool build_msvc(const std::vector<std::string>& sources, const std::vector<std::string>& includes,
-                       const std::string& out, const std::string& import_lib, const std::string& log,
-                       std::string* err, const std::function<void(size_t, size_t)>& progress) {
-    const std::string bat_env = vcvars();
-    if (bat_env.empty()) { *err = "Visual Studio's C++ build tools are not installed"; return false; }
-    namespace fs = std::filesystem;
-    const fs::path dir = fs::path(out).parent_path() / "obj";
-    std::error_code ec;
-    fs::create_directories(dir, ec);
-    {
-        std::ofstream rsp(dir / "cl.rsp");
-        rsp << "/nologo /c /MP";
-        for (const auto& f : game_module_cflags()) rsp << " " << f;
-        for (const auto& i : includes) rsp << " \"/I" << i << "\"";
-        rsp << " \"/Fo" << dir.string() << "\\\\\"";
-        for (const auto& s : sources) rsp << " \"" << s << "\"";
-        rsp << "\n";
-        std::ofstream lnk(dir / "link.rsp");
-        lnk << "/nologo /DLL \"/OUT:" << out << "\" \"" << (dir / "*.obj").string() << "\" \"" << import_lib << "\"";
-        for (const char* e : {"g_recomp_funcs,DATA", "g_recomp_func_count,DATA", "g_recomp_code_base,DATA",
-                              "g_recomp_code_end,DATA", "orig_OSSaveContext"})
-            lnk << " /EXPORT:" << e;
-        lnk << "\n";
-        std::ofstream bat(dir / "build.bat");
-        bat << "@echo off\r\necho [build] Visual Studio environment\r\ncall \"" << bat_env << "\" >nul || exit /b 1\r\n"
-            << "echo [build] compiling\r\ncl @\"" << (dir / "cl.rsp").string() << "\" || exit /b 1\r\n"
-            << "echo [build] linking\r\nlink @\"" << (dir / "link.rsp").string() << "\" || exit /b 1\r\n"
-            << "echo [build] done\r\n";
-    }
-    if (progress) progress(0, sources.size());
-    if (plat_run({"cmd", "/c", (dir / "build.bat").string()}, log.c_str()) != 0) {
-        *err = "building the game failed; see " + log;
-        return false;
-    }
-    if (progress) progress(sources.size(), sources.size());
-    fs::remove_all(dir, ec);
-    return true;
-}
-#endif
-
-bool game_module_compiler_present(std::string* missing) {
-    if (!zig_cc().empty()) return true;
-#ifdef _WIN32
-    if (!vcvars().empty()) return true;
-    *missing = "Visual Studio's C++ build tools";
-#else
-    if (plat_run({"cc", "--version"}, kPlatNull) == 0) return true;
-    *missing = "cc";
-#endif
-    return false;
 }
 
 bool game_module_build(const std::vector<std::string>& sources, const std::vector<std::string>& includes,
                        const std::string& out, const std::string& import_lib, const std::string& log,
                        std::string* err, const std::function<void(size_t, size_t)>& progress) {
 #ifdef _WIN32
-    if (use_msvc()) return build_msvc(sources, includes, out, import_lib, log, err, progress);
+    const std::string zig = toolchain_dir() + "/zig/zig.exe";
+#else
+    const std::string zig = toolchain_dir() + "/zig/zig";
 #endif
-    std::vector<std::string> cc = zig_cc();
-    if (cc.empty()) cc = {"cc"};
-    else if (!getenv("ZIG_GLOBAL_CACHE_DIR")) {
+    if (!plat_readable(zig.c_str())) { *err = "no zig in the toolchain (" + toolchain_dir() + ")"; return false; }
+    const std::vector<std::string> cc = {zig, "cc"};
+    if (!getenv("ZIG_GLOBAL_CACHE_DIR")) {
         // zig's cache (the libc pieces it builds once) beside the prepared games, in the
         // player's data folder: <data>/game/zig-cache for <data>/game/<hash>.work/<module>.
         const std::string cache = (std::filesystem::path(out).parent_path().parent_path() / "zig-cache").string();

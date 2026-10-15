@@ -28,30 +28,21 @@ PrepareSources prepare_sources() {
     return {GCN_RES_RECOMP, GCN_RES_TABLES, GCN_RES_SYMBOLS, GCN_RES_INCLUDE, GCN_RES_IMPORT_LIB};
 }
 
-// How python 3 is started: the app's own (tools/fetch_toolchain.sh), isolated from whatever
-// the machine's environment says. A development build without one uses the machine's:
-// `python3` on macOS and Linux; on Windows the py launcher python.org's installer puts in,
-// else `python`.
-static std::vector<std::string> python() {
-    if (const std::string t = toolchain_dir(); !t.empty()) {
+// The toolchain's Python (game_module.h), isolated from whatever the machine's environment
+// says; a universal macOS app carries one per architecture. Empty if it is not there.
+static std::string python() {
+    const std::string t = toolchain_dir();
 #if defined(_WIN32)
-        const std::vector<std::string> paths = {t + "/python/python.exe"};
+    for (const char* p : {"/python/python.exe"})
 #elif defined(__APPLE__) && defined(__aarch64__)
-        const std::vector<std::string> paths = {t + "/python-arm64/bin/python3", t + "/python/bin/python3"};
+    for (const char* p : {"/python-arm64/bin/python3", "/python/bin/python3"})
 #elif defined(__APPLE__)
-        const std::vector<std::string> paths = {t + "/python-x86_64/bin/python3", t + "/python/bin/python3"};
+    for (const char* p : {"/python-x86_64/bin/python3", "/python/bin/python3"})
 #else
-        const std::vector<std::string> paths = {t + "/python/bin/python3"};
+    for (const char* p : {"/python/bin/python3"})
 #endif
-        for (const auto& p : paths)
-            if (plat_readable(p.c_str())) return {p, "-I"};
-    }
-#ifdef _WIN32
-    if (plat_run({"py", "-3", "--version"}, kPlatNull) == 0) return {"py", "-3"};
-    return {"python"};
-#else
-    return {"python3"};
-#endif
+        if (plat_readable((t + p).c_str())) return t + p;
+    return {};
 }
 
 static uint32_t be32(const uint8_t* p) { return (uint32_t)p[0] << 24 | (uint32_t)p[1] << 16 | (uint32_t)p[2] << 8 | p[3]; }
@@ -103,12 +94,13 @@ bool prepare_check_disc(const char* iso, std::string* dol_sha1, std::string* err
 // tables, the symbols, the headers, the flags. Any change prepares again.
 static std::string inputs_hash() {
     const PrepareSources s = prepare_sources();
-    std::vector<fs::path> files;
+    // Of the headers, only those the generated code includes: a development build's include
+    // directory is the whole runtime, which changes far more often than the game's code does.
+    std::vector<fs::path> files = {s.symbols, s.include + "/recomp.h", s.include + "/compat.h"};
     std::error_code ec;
-    for (const auto& dir : {s.recompiler, s.tables, s.include})
+    for (const auto& dir : {s.recompiler, s.tables})
         for (auto it = fs::directory_iterator(dir, ec); !ec && it != fs::directory_iterator(); it.increment(ec))
             if (it->is_regular_file(ec)) files.push_back(it->path());
-    files.push_back(s.symbols);
     std::sort(files.begin(), files.end());
     Sha1 h;
     for (const auto& p : files) {
@@ -129,16 +121,6 @@ std::string prepare_module_path(const std::string& dol_sha1) {
                      game_module_filename());
 }
 
-bool prepare_tools_present(std::string* missing) {
-    missing->clear();
-    std::string compiler;
-    if (!game_module_compiler_present(&compiler)) *missing = compiler;
-    std::vector<std::string> py = python();
-    py.push_back("--version");
-    if (plat_run(py, kPlatNull) != 0) *missing += std::string(missing->empty() ? "" : ", ") + "python3";
-    return missing->empty();
-}
-
 std::string prepare_disc_copy_path(const std::string& dol_sha1) { return save_path("disc/" + dol_sha1.substr(0, 12) + ".ciso"); }
 
 bool prepare_game(const char* iso, std::string* module, std::string* disc_copy, std::string* err,
@@ -147,10 +129,9 @@ bool prepare_game(const char* iso, std::string* module, std::string* disc_copy, 
     say(0.0f, "checking the disc");
     std::string sha1;
     if (!prepare_check_disc(iso, &sha1, err)) return false;
-    std::string missing;
-    if (!prepare_tools_present(&missing)) {
-        *err = "missing tools: " + missing + " -- the app carries its own (resources/toolchain); a development build "
-               "uses the system's, or GCN_TOOLCHAIN";
+    const std::string py = python();
+    if (py.empty()) {
+        *err = "the toolchain that prepares the game is missing (" + toolchain_dir() + ")";
         return false;
     }
 
@@ -176,10 +157,8 @@ bool prepare_game(const char* iso, std::string* module, std::string* disc_copy, 
 
     say(0.05f, "recompiling");
     const PrepareSources src = prepare_sources();
-    std::vector<std::string> recomp = python();
-    recomp.insert(recomp.end(), {src.recompiler + "/recomp.py", (work / "main.dol").string(), src.symbols,
-                                 (work / "gen").string(), src.tables});
-    if (plat_run(recomp, log.c_str()) != 0) {
+    if (plat_run({py, "-I", src.recompiler + "/recomp.py", (work / "main.dol").string(), src.symbols,
+                  (work / "gen").string(), src.tables}, log.c_str()) != 0) {
         *err = "the recompiler failed; see " + log;
         return false;
     }
@@ -200,8 +179,9 @@ bool prepare_game(const char* iso, std::string* module, std::string* disc_copy, 
         return false;
 
     // Only the module and the log are kept: the generated C and the objects are the game's
-    // code, and nothing needs them once it is linked.
-    fs::remove_all(work / "gen", ec);
+    // code, and nothing needs them once it is linked -- unless a developer asks to read the C
+    // (GCN_KEEP_GEN=1), which keeps each instruction's address and word in a comment.
+    if (!getenv("GCN_KEEP_GEN")) fs::remove_all(work / "gen", ec);
 
     // And the disc, so that the player's own image is no longer needed (disc.h); with the
     // whole image's SHA-1, which says whether it was Redump's dump. Preparing again from
@@ -237,7 +217,7 @@ bool game_module_ensure(const char* iso, bool force) {
         fprintf(stderr, "%s\n", err.c_str());
         return false;
     }
-    std::string path = force ? std::string() : game_module_find(prepare_module_path(sha1), sha1);
+    std::string path = force ? std::string() : game_module_find(prepare_module_path(sha1));
     if (path.empty()) {
         fprintf(stderr, "[prepare] preparing " GCN_GAME_TITLE " from %s (once)\n", iso);
         int last = -1;

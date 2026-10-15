@@ -1,6 +1,6 @@
 // The game's GX command stream, translated for Aurora's command processor (aurora_bridge.cpp)
-// and handed from the guest's thread to whichever thread drives the GPU (aurora_gpu.h in the
-// game; the benchmark just discards it).
+// and handed from the guest's thread to whichever thread drives the GPU (aurora_gpu.h; a
+// --headless run just discards it).
 //
 // The stream comes in chunks. A chunk ends where the game waits on the GPU -- a draw-done or
 // a token -- and where it shows a frame (a copy to the external framebuffer); in between,

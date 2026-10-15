@@ -1,7 +1,7 @@
 // Scripted controller input, for driving the game with no human at the controls.
 //
-// Shared by the game and the benchmark, since anything past the title screen needs button
-// presses, and a scripted run has no other way to produce them.
+// Anything past the title screen needs button presses, and a scripted run has no other way to
+// produce them.
 #pragma once
 #include "hw/pad.h"
 

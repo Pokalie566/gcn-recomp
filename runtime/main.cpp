@@ -30,7 +30,6 @@
 #include <chrono>
 #include <cstdlib>
 #include <cstring>
-#include <ctime>
 #include <string>
 #include <vector>
 
@@ -71,34 +70,6 @@ void audio_set_paused(bool paused);
 // bindings -- as GC pad 1, the mouse over it.
 // ---------------------------------------------------------------------------
 static SDL_Window* g_win;
-
-// GCN_RAMSNAP=<dir> writes the low 8 MB of guest RAM every GCN_RAMSNAP_EVERY presented
-// frames (default 150), within GCN_RAMSNAP_RANGE=a-b if set: diffing snapshots taken in
-// known game states is how a game variable gets found. Taken from this thread, so a
-// snapshot is the guest's state at about that frame, not at an exact instruction.
-static void ram_snapshot(uint32_t frame) {
-    static const char* dir = getenv("GCN_RAMSNAP");
-    if (!dir) return;
-    static const uint32_t every = getenv("GCN_RAMSNAP_EVERY") ? (uint32_t)atoi(getenv("GCN_RAMSNAP_EVERY")) : 150;
-    static int lo = -1, hi = -1;
-    static bool parsed = false;
-    if (!parsed) {
-        parsed = true;
-        plat_make_dirs(dir);
-        if (const char* r = getenv("GCN_RAMSNAP_RANGE")) {
-            lo = atoi(r);
-            const char* dash = strchr(r, '-');
-            hi = dash ? atoi(dash + 1) : lo;
-        }
-    }
-    if (!every || frame % every || (lo >= 0 && ((int)frame < lo || (int)frame > hi))) return;
-    char path[512];
-    snprintf(path, sizeof(path), "%s/ram_%05u.bin", dir, frame);
-    if (FILE* f = fopen(path, "wb")) {
-        fwrite(mem_ptr(0x80000000), 1, 8u << 20, f);
-        fclose(f);
-    }
-}
 
 // --mouse-aim (GCN_MOUSE_AIM=1, a setting): the mouse drives the C stick (see mouse_aim.h),
 // its buttons the triggers. The cursor is captured while the window has it; F1 lets it go, a
@@ -300,12 +271,11 @@ int main(int argc, char** argv) {
     }
     Settings cur = session_settings();
 
-    // Default: the image the build was configured with, else the first image in ./rom
-    std::string iso_default = GCN_DEFAULT_ISO;
-    if (!plat_readable(iso_default.c_str())) iso_default = plat_find_file("rom", ".iso");
+    // Default: the first image in ./rom
+    std::string iso_default = plat_find_file("rom", ".iso");
     if (iso_default.empty()) iso_default = plat_find_file("rom", ".ciso");
     const char* iso = cur.iso.empty() ? iso_default.c_str() : cur.iso.c_str();
-    bool headless = false, input_log = true, fast = false, dump_textures = false;
+    bool headless = false, fast = false, dump_textures = false;
     std::string input_log_dir, replay_dir;
     const char* dump_dir = nullptr;
     int dump_every = 0;
@@ -317,7 +287,6 @@ int main(int argc, char** argv) {
         else if (!strncmp(argv[i], "--log=", 6)) {
             if (!log_enable_list(argv[i] + 6)) { fprintf(stderr, "--log: unknown category in %s (cpu,os,hw,dvd,gx,vi,si,exi,dsp,ai,thr)\n", argv[i] + 6); return 1; }
         }
-        else if (!strcmp(argv[i], "--no-input-log")) input_log = false;
         else if (!strncmp(argv[i], "--input-log=", 12)) input_log_dir = argv[i] + 12;
         else if (!strncmp(argv[i], "--replay=", 9)) replay_dir = argv[i] + 9;
         else if (!strcmp(argv[i], "--sample")) debug_sampler_start();
@@ -358,25 +327,16 @@ int main(int argc, char** argv) {
         timing_init();
         if (fast) clock_set_scale(0);  // run as fast as the host allows; the game sees 60 Hz regardless
         input_script_init();
-        // Every run records what the guest read from the controller, so that a route to
-        // wherever something went wrong can be played back with --replay=<dir>. See
-        // input_log.h. --no-input-log turns it off; --input-log=<dir> names the directory.
-        // The memory card is snapshotted into the log, and a replay runs on a scratch copy
-        // of that snapshot rather than the real card.
+        // --input-log=<dir> records what the guest read from the controller, so that a route
+        // to wherever something went wrong can be played back with --replay=<dir> (see
+        // input_log.h). The memory card is snapshotted into the log, and a replay runs on a
+        // scratch copy of that snapshot rather than the real card.
         if (!replay_dir.empty()) {
             if (!input_replay_load(replay_dir, replay_card)) return false;
             if (!replay_card.empty()) g_card_base = replay_card.c_str();
         }
         card_init();
-        if (input_log) {
-            if (input_log_dir.empty()) {
-                char stamp[64];
-                time_t now = time(nullptr);
-                strftime(stamp, sizeof(stamp), "%Y%m%d-%H%M%S", localtime(&now));
-                input_log_dir = save_path(std::string("inputs/") + stamp);
-            }
-            input_log_start(input_log_dir, g_card_base ? g_card_base : save_path("card"));
-        }
+        if (!input_log_dir.empty()) input_log_start(input_log_dir, g_card_base ? g_card_base : save_path("card"));
         return true;
     };
 
@@ -624,7 +584,6 @@ int main(int argc, char** argv) {
             pause();
             resume_at = now + std::chrono::milliseconds(ms ? atoi(ms + 1) : 1000);
         }
-        ram_snapshot(gpu_frames_presented());
         if (quit_at && gpu_frames_presented() >= quit_at) running = false;
     }
     input_log_end();

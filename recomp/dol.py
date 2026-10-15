@@ -1,45 +1,6 @@
-"""DOL loader, disc image reader and dtk symbols.txt parser."""
+"""DOL loader and dtk symbols.txt parser."""
 import re
 import struct
-
-
-class DiscImage:
-    """Positional reads from a GameCube disc image: a plain .iso, or a CISO.
-
-    CISO is a 0x8000-byte header -- "CISO", a little-endian block size, then one byte
-    per block saying whether that block is stored -- followed by the stored blocks in
-    order. Blocks that are not stored read as zero.
-    """
-
-    def __init__(self, path):
-        self.f = open(path, 'rb')
-        hdr = self.f.read(0x8000)
-        self.block = 0
-        if hdr[:4] == b'CISO':
-            self.block = struct.unpack('<I', hdr[4:8])[0]
-            self.map = {}
-            stored = 0
-            for i, present in enumerate(hdr[8:]):
-                if present == 1:
-                    self.map[i] = stored
-                    stored += 1
-
-    def read(self, offset, n):
-        if not self.block:
-            self.f.seek(offset)
-            return self.f.read(n)
-        out = bytearray()
-        while n:
-            blk, off = divmod(offset, self.block)
-            k = min(n, self.block - off)
-            if blk in self.map:
-                self.f.seek(0x8000 + self.map[blk] * self.block + off)
-                out += self.f.read(k)
-            else:
-                out += bytes(k)
-            offset += k
-            n -= k
-        return bytes(out)
 
 
 class Dol:

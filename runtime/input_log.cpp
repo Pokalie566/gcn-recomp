@@ -15,7 +15,7 @@ uint32_t gx_frames_submitted();
 namespace {
 
 struct Entry {
-    uint32_t key;  // poll sequence number (v2) or presented frame (v1)
+    uint32_t key;  // poll sequence number
     uint8_t chan;
     PadState s;
 };
@@ -52,10 +52,7 @@ std::vector<Entry> g_replay;     // sorted by key, as logged
 size_t g_replay_pos;             // first entry not yet applied
 PadState g_replay_state[4];
 bool g_replay_loaded;
-bool g_replay_by_frame;          // a v1 log
 uint32_t g_replay_last_key;      // the last change, or the end marker when the log has one
-
-uint32_t replay_key() { return g_replay_by_frame ? gx_frames_submitted() : g_poll_seq; }
 
 void record(int chan, const PadState& s) {
     if (!g_out) return;
@@ -118,24 +115,17 @@ bool input_replay_load(const std::string& dir, std::string& card_out) {
         return false;
     }
     char line[256];
-    int version = 1;
     uint32_t end_key = 0;
     while (fgets(line, sizeof(line), f)) {
         if (line[0] == '#') {
             long long epoch;
             unsigned end_poll, end_frame;
-            if (sscanf(line, "# gcn-recomp input log v%d", &version) == 1) continue;
             if (sscanf(line, "# epoch %lld", &epoch) == 1) rtc_set_base((time_t)epoch);
-            if (sscanf(line, "# end %u %u", &end_poll, &end_frame) == 2) end_key = version >= 2 ? end_poll : end_frame;
+            if (sscanf(line, "# end %u %u", &end_poll, &end_frame) == 2) end_key = end_poll;
             continue;
         }
-        if (line[0] == '\n') continue;
         unsigned key, frame, chan, conn, buttons, sx, sy, cx, cy, l, r;
-        if (version >= 2) {
-            if (sscanf(line, "%u %u %u %u %x %x %x %x %x %x %x", &key, &frame, &chan, &conn, &buttons, &sx, &sy, &cx, &cy, &l, &r) != 11) continue;
-        } else {
-            if (sscanf(line, "%u %u %u %x %x %x %x %x %x %x", &key, &chan, &conn, &buttons, &sx, &sy, &cx, &cy, &l, &r) != 10) continue;
-        }
+        if (sscanf(line, "%u %u %u %u %x %x %x %x %x %x %x", &key, &frame, &chan, &conn, &buttons, &sx, &sy, &cx, &cy, &l, &r) != 11) continue;
         if (chan > 3) continue;
         Entry e;
         e.key = key;
@@ -153,7 +143,6 @@ bool input_replay_load(const std::string& dir, std::string& card_out) {
         return false;
     }
     g_replay_last_key = std::max(g_replay.back().key, end_key);
-    g_replay_by_frame = version < 2;
     for (auto& s : g_replay_state) { s = PadState(); s.connected = true; }
     g_replay_loaded = true;
     // The card as the run found it, in a scratch copy: a folder, or (an older log) a raw
@@ -173,10 +162,8 @@ bool input_replay_load(const std::string& dir, std::string& card_out) {
         fprintf(stderr, "[input] could not copy the card snapshot; replaying with the live card\n");
         card_out.clear();
     }
-    fprintf(stderr, "[input] replaying %zu changes over %u %s from %s%s%s\n", g_replay.size(),
-            g_replay_last_key, g_replay_by_frame ? "frames" : "polls", path.c_str(),
-            card_out.empty() ? "" : " (with its card snapshot)",
-            g_replay_by_frame ? " (v1 log: keyed by frame, so only approximate)" : "");
+    fprintf(stderr, "[input] replaying %zu changes over %u polls from %s%s\n", g_replay.size(), g_replay_last_key,
+            path.c_str(), card_out.empty() ? "" : " (with its card snapshot)");
     return true;
 }
 
@@ -185,7 +172,7 @@ bool input_pad_poll(int chan, PadState& s) {
     std::lock_guard<std::mutex> lk(g_mutex);
     bool replayed = false;
     if (g_replay_loaded) {
-        const uint32_t key = replay_key();
+        const uint32_t key = g_poll_seq;
         while (g_replay_pos < g_replay.size() && g_replay[g_replay_pos].key <= key) {
             const Entry& e = g_replay[g_replay_pos++];
             g_replay_state[e.chan] = e.s;
