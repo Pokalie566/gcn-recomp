@@ -120,6 +120,12 @@ compiling {} = compilation {}
 copying the disc = copie du disque
 linking = édition de liens
 ready = prêt
+Update = Mise à jour
+Version {}: looking for a newer one = Version {} : recherche d'une version plus récente
+Version {}, the latest = Version {}, la plus récente
+Version {} downloading = Version {} en téléchargement
+Version {} ready: it starts next time = Version {} prête : elle démarre au prochain lancement
+Version {} = Version {}
 
 # Sauvegardes
 Make a copy of the card now = Faire une copie de la carte maintenant

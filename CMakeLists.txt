@@ -1,7 +1,7 @@
 # gcn-recomp: a GameCube static-recompilation toolkit. A game project adds this directory
 # and calls gcn_add_game() with what is specific to its game; everything else -- the
 # PowerPC -> C recompiler, the hardware runtime, the renderer and the frontend -- is here.
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.21)
 project(gcn_recomp C CXX)
 
 # Language levels are set per target: gcn_add_game() runs in the game project's scope,
@@ -36,13 +36,15 @@ option(GCN_APP "Build the game as an app to hand out: no disc, no game code, eve
 #                              libraries' in the app
 #   [APP_ICON <path>]          its icon, without extension: <path>.icns (the macOS app),
 #                              .ico (the Windows executable), .png (the window, elsewhere)
+#   [UPDATE_URL <url>]         with GCN_APP: the GitHub repository whose releases update the
+#                              app (runtime/update.h), e.g. https://github.com/me/game
 # )
 # The executable holds no game code: it prepares the game from the player's disc on first run
 # (runtime/prepare.h), with the toolchain (tools/fetch_toolchain.cmake) -- an app's own, or
 # for a development build the one fetched here into the build directory, GCN_TOOLCHAIN_DIR
 # then, with GCN_PYTHON its Python, for the game project's tests.
 function(gcn_add_game)
-  cmake_parse_arguments(G "" "NAME;TITLE;DISC_ID;DOL_SHA1;SYMBOLS;TABLES;UI;APP_NAME;APP_ID;APP_ICON" "SOURCES;LICENSES" ${ARGN})
+  cmake_parse_arguments(G "" "NAME;TITLE;DISC_ID;DOL_SHA1;SYMBOLS;TABLES;UI;APP_NAME;APP_ID;APP_ICON;UPDATE_URL" "SOURCES;LICENSES" ${ARGN})
   foreach(req NAME TITLE DISC_ID DOL_SHA1 SYMBOLS TABLES)
     if(NOT G_${req})
       message(FATAL_ERROR "gcn_add_game: ${req} is required")
@@ -243,6 +245,49 @@ function(gcn_add_game)
     target_compile_definitions(${G_NAME} PRIVATE GCN_TRACE_CALLS)
   endif()
 
+  # Updates (runtime/update.h): Velopack's C/C++ library, in an app that says where its
+  # releases are. Its shared library, beside the executable (in a macOS app, in Frameworks):
+  # the static one would bring a second copy of Rust's standard library, nod having one.
+  if(GCN_APP AND G_UPDATE_URL)
+    FetchContent_Declare(gcn_velopack
+      URL https://github.com/velopack/velopack/releases/download/1.2.161/velopack_libc_1.2.161.zip
+      URL_HASH SHA256=31de8f2cf05a47bd5328a9f98b0c41aec1582156f6075f1058b26941f7f17c20
+      DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+    FetchContent_MakeAvailable(gcn_velopack)
+    set(_vpk ${gcn_velopack_SOURCE_DIR})
+    set(_vpk_arch x64)
+    if(_arch STREQUAL aarch64)
+      set(_vpk_arch arm64)
+    endif()
+    add_library(gcn_velopack SHARED IMPORTED)
+    set_target_properties(gcn_velopack PROPERTIES INTERFACE_INCLUDE_DIRECTORIES ${_vpk}/include)
+    if(WIN32)
+      # Under the name its import library gives it; the app's copy of its DLLs (below) puts it
+      # beside the executable.
+      configure_file(${_vpk}/lib/velopack_libc_win_${_vpk_arch}_msvc.dll ${CMAKE_BINARY_DIR}/velopack/velopack_libc.dll COPYONLY)
+      set_target_properties(gcn_velopack PROPERTIES IMPORTED_LOCATION ${CMAKE_BINARY_DIR}/velopack/velopack_libc.dll
+        IMPORTED_IMPLIB ${_vpk}/lib/velopack_libc_win_${_vpk_arch}_msvc.dll.lib)
+    elseif(APPLE)
+      # Named for where the app finds it, its Frameworks (the one shipped names the build's
+      # machine).
+      set(_lib ${CMAKE_BINARY_DIR}/velopack/libvelopack_libc.dylib)
+      configure_file(${_vpk}/lib/velopack_libc_osx.dylib ${_lib} COPYONLY)
+      execute_process(COMMAND install_name_tool -id @rpath/libvelopack_libc.dylib ${_lib} COMMAND_ERROR_IS_FATAL ANY)
+      set_target_properties(gcn_velopack PROPERTIES IMPORTED_LOCATION ${_lib})
+      set_target_properties(${G_NAME} PROPERTIES SKIP_BUILD_RPATH ON)
+      target_link_options(${G_NAME} PRIVATE -Wl,-rpath,@executable_path/../Frameworks)
+      add_custom_command(TARGET ${G_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${_lib} $<TARGET_BUNDLE_CONTENT_DIR:${G_NAME}>/Frameworks/libvelopack_libc.dylib)
+    else()
+      # Beside the executable, found there ($ORIGIN). It has no soname: linked as -l.
+      configure_file(${_vpk}/lib/velopack_libc_linux_${_vpk_arch}_gnu.so ${CMAKE_BINARY_DIR}/libvelopack_libc.so COPYONLY)
+      set_target_properties(gcn_velopack PROPERTIES IMPORTED_LOCATION ${CMAKE_BINARY_DIR}/libvelopack_libc.so IMPORTED_NO_SONAME ON)
+      set_target_properties(${G_NAME} PROPERTIES BUILD_RPATH_USE_ORIGIN ON)
+    endif()
+    target_link_libraries(${G_NAME} PRIVATE gcn_velopack)
+    target_compile_definitions(${G_NAME} PRIVATE GCN_UPDATE_URL="${G_UPDATE_URL}")
+  endif()
+
   # The app: what preparing the game on the player's machine needs (runtime/prepare.h: the
   # recompiler, the tables, the symbols, the headers the generated code includes), the menus
   # and the licences, in <APP_NAME>.app/Contents/Resources on macOS, in resources/ beside the
@@ -265,12 +310,29 @@ function(gcn_add_game)
           COMMAND ${CMAKE_COMMAND} -E copy ${G_APP_ICON}.icns ${_res}/${_icon_name}.icns VERBATIM)
       endif()
     else()
+      set_target_properties(${G_NAME} PROPERTIES OUTPUT_NAME "${_app}")
       set(_res $<TARGET_FILE_DIR:${G_NAME}>/resources)
+    endif()
+    if(WIN32)
+      # A window and no console; and beside the executable the DLLs it needs that Windows does
+      # not have: those of the libraries built as DLLs (Dawn, libpng...) and Visual C++'s
+      # runtime, so that it starts on any PC.
+      set_target_properties(${G_NAME} PROPERTIES WIN32_EXECUTABLE ON)
+      target_link_options(${G_NAME} PRIVATE /ENTRY:mainCRTStartup)
+      set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
+      include(InstallRequiredSystemLibraries)
+      add_custom_command(TARGET ${G_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:${G_NAME}> ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS}
+                $<TARGET_FILE_DIR:${G_NAME}>
+        COMMAND_EXPAND_LISTS)
     endif()
     file(GLOB _recomp_py ${GCN_RECOMP_DIR}/recomp/*.py)
     set(_game_licenses)
+    if(G_UPDATE_URL)
+      list(APPEND _game_licenses COMMAND ${CMAKE_COMMAND} -E copy ${RT}/third_party/velopack-LICENSE.txt ${_res}/licenses/Velopack.txt)
+    endif()
     if(G_LICENSES)
-      set(_game_licenses COMMAND ${CMAKE_COMMAND} -E copy ${G_LICENSES} ${_res}/licenses/)
+      list(APPEND _game_licenses COMMAND ${CMAKE_COMMAND} -E copy ${G_LICENSES} ${_res}/licenses/)
     endif()
     # What the app links in from Aurora's dependencies, with their licences.
     # (Those not built here, found on the system, are skipped.)

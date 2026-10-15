@@ -89,8 +89,12 @@ everything, prepares the game from the disc the player drops on it, and plays; t
 state goes to `~/Library/Application Support/<APP_NAME>`. Its first launch runs an assistant
 (disc with the system's own file picker, preparation, controller test, display, texture
 packs); its settings have Controller, Textures (pack by pack) and Disc pages besides.
-`APP_ICON` gives it an icon. Built from the same build of the
-game, without `GCN_APP`, the launcher is there too (`--no-launcher` skips it).
+`APP_ICON` gives it an icon. With `UPDATE_URL`, a GitHub repository, an app installed from
+that repository's releases updates itself (`runtime/update.h`, through
+[Velopack](https://velopack.io)): each start looks for a newer release and downloads it, and
+the next start runs it; the game project makes the releases with Velopack's `vpk` (lm-recomp's
+`tools/release.sh`). Built from the same build of the game, without `GCN_APP`, the launcher is
+there too (`--no-launcher` skips it), and nothing updates.
 
 The menus use RmlUi (MIT) and FreeType (the FreeType License: portions of this software are
 copyright © The FreeType Project, www.freetype.org), both built with Aurora, and the Fira

@@ -44,6 +44,10 @@ points the preparation at an app's copy of the recompiler, tables, symbols and h
 (`recomp/`, `tables/`, `symbols.txt`, `include/`) instead of the source tree, and
 `GCN_TOOLCHAIN=<dir>` at another toolchain than the build's.
 
+An app built with `UPDATE_URL` and installed by Velopack looks for a newer release at each start
+(`runtime/update.h`); `GCN_UPDATE_URL=<url or folder>` looks there instead, a folder of `vpk`
+packages for a test. What it does is in the log, as `[update]` lines.
+
 ## Input logging and replay
 
 `--input-log=<dir>` records the controller state the guest polled, keyed by the poll's

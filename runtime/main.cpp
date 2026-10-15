@@ -19,6 +19,7 @@
 #include "ui/launcher.h"
 #include "ui/pick_file.h"
 #include "ui/ui.h"
+#include "update.h"
 #include <aurora/aurora.h>
 #include <aurora/event.h>
 #include <aurora/gfx.h>
@@ -227,6 +228,7 @@ static void apply_settings(const Settings& s, const Settings* was) {
 }
 
 int main(int argc, char** argv) {
+    update_startup();   // first: an installed app's own hooks, and a downloaded update applied
     if (crash_report_main(argc, argv)) return 0;   // the dialog of a run that crashed
     g_argc = argc;
     g_argv = argv;

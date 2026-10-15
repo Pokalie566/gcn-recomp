@@ -9,10 +9,12 @@
 #include "runtime.h"
 #include "saves.h"
 #include "ui/pick_file.h"
+#include "update.h"
 #include "versions.h"
 #include "ui/ui.h"
 #include <aurora/aurora.h>
 #include <aurora/event.h>
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -105,6 +107,23 @@ UiLauncher g_l;
 std::string g_module;    // the prepared game, once there is one
 std::string g_failed;    // why the last preparation failed
 
+// The line about updates (update.h): this version, and a newer one on its way. False outside
+// an installed app.
+bool update_line(UiCheck* c) {
+    const UpdateStatus u = update_status();
+    switch (u.state) {
+    case UpdateStatus::NONE: return false;
+    case UpdateStatus::CHECKING: *c = {"Update", "busy", ui_trf("Version {}: looking for a newer one", u.current)}; break;
+    case UpdateStatus::LATEST: *c = {"Update", "ok", ui_trf("Version {}, the latest", u.current)}; break;
+    case UpdateStatus::DOWNLOADING:
+        *c = {"Update", "busy", ui_trf("Version {} downloading", u.next) + " (" + std::to_string(u.percent) + "%)"};
+        break;
+    case UpdateStatus::READY: *c = {"Update", "ok", ui_trf("Version {} ready: it starts next time", u.next)}; break;
+    case UpdateStatus::FAILED: *c = {"Update", "ok", ui_trf("Version {}", u.current)}; break;
+    }
+    return true;
+}
+
 void check(const LauncherEnv& env, const Settings& cur) {
     UiLauncher l;
     l.preparing = g_l.preparing;
@@ -164,6 +183,7 @@ void check(const LauncherEnv& env, const Settings& cur) {
     const size_t textures = gx::texture_pack_count();
     if (!textures) l.checks.push_back({"Textures", "ok", ui_tr("The game's own (no pack in textures/)")});
     else l.checks.push_back({"Textures", "ok", ui_trf("{} in the pack", std::to_string(textures)) + (cur.textures ? "" : ui_tr(", turned off in Settings"))});
+    if (UiCheck u; update_line(&u)) l.checks.push_back(u);
     l.disc_ok = disc_ok;
     l.can_play = disc_ok && !g_module.empty() && !l.preparing;
     // The Disc settings page: the disc's check, and the game's when there is a disc.
@@ -262,6 +282,7 @@ void settings_pages_update(const Settings& cur, bool in_game) {
 }
 
 bool launcher_run(LauncherEnv& env, Settings& cur) {
+    update_check_start();
     check(env, cur);
     if (cur.setup_done) ui_show_launcher(cur, g_l);
     else ui_show_setup(cur, g_l);
@@ -286,6 +307,9 @@ bool launcher_run(LauncherEnv& env, Settings& cur) {
         check(env, cur);
         prepare_start(cur.iso);
     };
+    // A game the player had prepared, before an update changed how it is made: prepared again,
+    // unasked.
+    if (cur.setup_done && g_l.can_prepare) start_preparing();
     for (;;) {
         for (const AuroraEvent* ev = aurora_update(); ev && ev->type != AURORA_NONE; ev++) {
             if (ev->type == AURORA_EXIT) {
@@ -378,6 +402,16 @@ bool launcher_run(LauncherEnv& env, Settings& cur) {
             } else {
                 for (UiCheck& c : g_l.checks)
                     if (c.label == "Prepared") c.detail = g_l.progress_text;
+                ui_set_launcher(g_l);
+            }
+        }
+
+        // The update line, as its thread gets on.
+        if (UiCheck u; update_line(&u)) {
+            auto it = std::find_if(g_l.checks.begin(), g_l.checks.end(), [](const UiCheck& c) { return c.label == "Update"; });
+            if (it == g_l.checks.end()) g_l.checks.push_back(u);
+            if (it == g_l.checks.end() || it->state != u.state || it->detail != u.detail) {
+                if (it != g_l.checks.end()) *it = u;
                 ui_set_launcher(g_l);
             }
         }

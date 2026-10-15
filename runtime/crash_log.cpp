@@ -17,6 +17,7 @@
 #define read _read
 #define write _write
 #define close _close
+#define fileno _fileno
 #else
 #include <unistd.h>
 #endif
@@ -33,6 +34,7 @@ std::string untranslated(const std::string& english, const std::string& arg) {
 std::string (*g_trf)(const std::string&, const std::string&) = untranslated;
 FILE* g_log;
 int g_console = -1;   // stderr as it was: the terminal, if any
+int g_stderr = 2;     // stderr's descriptor
 }
 
 void log_start(const std::string& path) {
@@ -45,12 +47,15 @@ void log_start(const std::string& path) {
         return;
     }
     g_log_path = path;
-    // stderr into a pipe; a thread hands what comes out to the terminal and the file.
+    // stderr into a pipe; a thread hands what comes out to the terminal and the file. A
+    // Windows app has no console, and its stderr no descriptor until it is given one.
+    if (fileno(stderr) < 0) (void)!freopen("NUL", "w", stderr);
+    g_stderr = fileno(stderr);
     int fds[2];
     fflush(stderr);
     if (pipe(fds) != 0) return;
-    g_console = dup(2);
-    dup2(fds[1], 2);
+    g_console = dup(g_stderr);
+    dup2(fds[1], g_stderr);
     close(fds[1]);
     setvbuf(stderr, nullptr, _IONBF, 0);
     std::thread([rd = fds[0]] {
@@ -77,7 +82,7 @@ void crash_report(const char* what) {
     if (g_console >= 0) (void)!write(g_console, line, (unsigned)strlen(line));
     const char* dialog = getenv("GCN_CRASH_DIALOG");
     if (dialog && !strcmp(dialog, "0")) return;
-    if (g_console >= 0) dup2(g_console, 2);   // the dialog's process gets the terminal, not a pipe about to close
+    if (g_console >= 0) dup2(g_console, g_stderr);   // the dialog's process gets the terminal, not a pipe about to close
     const std::string exe = plat_executable_path();
     const std::string text = g_trf("The game stopped: {}", what) + "\n\n" +
                              (g_log_path.empty() ? g_trf("There is no log.", "")
