@@ -7,11 +7,12 @@
 #   DEST/python-arm64, python-x86_64    instead, for a universal macOS app (-DUNIVERSAL=ON):
 #                                       one zig binary for both, one Python each
 #
-#   cmake -DDEST=<dir> [-DARCH=x86_64|aarch64] [-DUNIVERSAL=ON] -P tools/fetch_toolchain.cmake
+#   cmake -DDEST=<dir> [-DOS=windows|macos|linux] [-DARCH=x86_64|aarch64] [-DUNIVERSAL=ON]
+#         -P tools/fetch_toolchain.cmake
 #
 # A development build fetches it into its build directory (CMakeLists.txt), an app's
-# packaging into the app; runtime/game_module.cpp finds it (toolchain_dir). ARCH defaults to
-# the machine's. Downloads are kept in GCN_TOOLCHAIN_CACHE (by default
+# packaging into the app; runtime/game_module.cpp finds it (toolchain_dir). OS and ARCH default
+# to the machine's (another for an app built for another system, tools/windows-cross.cmake). Downloads are kept in GCN_TOOLCHAIN_CACHE (by default
 # ~/.cache/gcn-recomp-toolchain, %LOCALAPPDATA%\gcn-recomp-toolchain on Windows), so a second
 # run is offline.
 cmake_minimum_required(VERSION 3.20)
@@ -33,7 +34,7 @@ set(py_x86_64-macos x86_64-apple-darwin 7ea9761b9069c10b9a20531d568645849d604c59
 set(py_aarch64-macos aarch64-apple-darwin c2edb321cd32ec2b170df208db0446dccc4398db602ca27cf2079098fb1f7d9d)
 
 if(NOT DEST)
-  message(FATAL_ERROR "usage: cmake -DDEST=<dir> [-DARCH=x86_64|aarch64] [-DUNIVERSAL=ON] -P ${CMAKE_CURRENT_LIST_FILE}")
+  message(FATAL_ERROR "usage: cmake -DDEST=<dir> [-DOS=windows|macos|linux] [-DARCH=x86_64|aarch64] [-DUNIVERSAL=ON] -P ${CMAKE_CURRENT_LIST_FILE}")
 endif()
 if(CMAKE_HOST_WIN32)
   set(os windows)
@@ -44,6 +45,9 @@ elseif(CMAKE_HOST_APPLE)
 else()
   set(os linux)
   set(cache $ENV{HOME}/.cache/gcn-recomp-toolchain)
+endif()
+if(OS)
+  set(os ${OS})
 endif()
 if(DEFINED ENV{GCN_TOOLCHAIN_CACHE})
   set(cache $ENV{GCN_TOOLCHAIN_CACHE})

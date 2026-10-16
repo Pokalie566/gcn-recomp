@@ -89,7 +89,7 @@ function(gcn_add_game)
     set(_toolchain ${CMAKE_BINARY_DIR}/toolchain)
     file(SHA1 ${GCN_RECOMP_DIR}/tools/fetch_toolchain.cmake _stamp)
     if(NOT EXISTS ${_toolchain}/fetched-${_stamp})
-      execute_process(COMMAND ${CMAKE_COMMAND} -DDEST=${_toolchain} -DARCH=${_arch}
+      execute_process(COMMAND ${CMAKE_COMMAND} -DDEST=${_toolchain} -DOS=${_os} -DARCH=${_arch}
                               -P ${GCN_RECOMP_DIR}/tools/fetch_toolchain.cmake
                       COMMAND_ERROR_IS_FATAL ANY)
       file(TOUCH ${_toolchain}/fetched-${_stamp})
@@ -216,6 +216,16 @@ function(gcn_add_game)
     # A DLL cannot leave symbols for the executable to fill in as it loads: the module
     # links with the executable's import library instead, of everything it defines.
     set_target_properties(${G_NAME} PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+    if(NOT CMAKE_HOST_WIN32)   # built from Linux: its variables at zero, tools/export_bss.cmake
+      set(_bss_def ${CMAKE_CURRENT_BINARY_DIR}/${G_NAME}_bss.def)
+      if(NOT EXISTS ${_bss_def})
+        file(WRITE ${_bss_def} "EXPORTS\n")
+      endif()
+      target_sources(${G_NAME} PRIVATE ${_bss_def})
+      add_custom_command(TARGET ${G_NAME} PRE_LINK
+        COMMAND ${CMAKE_COMMAND} -DOBJS=${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/${G_NAME}.dir/exports.def.objs
+                -DNM=${CMAKE_NM} -DOUT=${_bss_def} -P ${GCN_RECOMP_DIR}/tools/export_bss.cmake VERBATIM)
+    endif()
     target_compile_definitions(${G_NAME} PRIVATE GCN_RES_IMPORT_LIB="$<TARGET_LINKER_FILE:${G_NAME}>")
   endif()
   set_target_properties(${G_NAME} PROPERTIES ENABLE_EXPORTS ON)
@@ -315,16 +325,22 @@ function(gcn_add_game)
     endif()
     if(WIN32)
       # A window and no console; and beside the executable the DLLs it needs that Windows does
-      # not have: those of the libraries built as DLLs (Dawn, libpng...) and Visual C++'s
-      # runtime, so that it starts on any PC.
+      # not have: those of the libraries built as DLLs (Dawn, libpng...), the shader compiler
+      # Dawn loads (DXC, which Aurora asks for), and Visual C++'s runtime, so that it starts
+      # on any PC.
       set_target_properties(${G_NAME} PROPERTIES WIN32_EXECUTABLE ON)
       target_link_options(${G_NAME} PRIVATE /ENTRY:mainCRTStartup)
-      set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
-      include(InstallRequiredSystemLibraries)
+      if(CMAKE_HOST_WIN32)
+        set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
+        include(InstallRequiredSystemLibraries)
+      else()   # built from Linux, tools/windows-cross.cmake: its copy of the runtime
+        file(GLOB CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS ${MSVC_REDIST_DIR}/x64/Microsoft.VC143.CRT/msvcp*.dll
+             ${MSVC_REDIST_DIR}/x64/Microsoft.VC143.CRT/vcruntime*.dll ${MSVC_REDIST_DIR}/x64/Microsoft.VC143.CRT/concrt*.dll)
+      endif()
+      include(${aurora_SOURCE_DIR}/cmake/AuroraCopyRuntimeDLLs.cmake)
+      aurora_copy_runtime_dlls(${G_NAME})
       add_custom_command(TARGET ${G_NAME} POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different $<TARGET_RUNTIME_DLLS:${G_NAME}> ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS}
-                $<TARGET_FILE_DIR:${G_NAME}>
-        COMMAND_EXPAND_LISTS)
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS} $<TARGET_FILE_DIR:${G_NAME}>)
     endif()
     file(GLOB _recomp_py ${GCN_RECOMP_DIR}/recomp/*.py)
     set(_game_licenses)

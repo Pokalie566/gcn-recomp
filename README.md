@@ -127,6 +127,9 @@ the stick's y instead) -- which the environment variables of the same names over
 - `patches/`: fixes to Aurora not yet upstream, applied to its pinned commit at configure
   time.
 - `tools/fetch_toolchain.cmake`: the toolchain that prepares the game.
+- `tools/windows-cross.cmake`: a CMake toolchain file to build for Windows from Linux
+  (clang-cl, and Microsoft's SDK and Visual C++ runtime fetched by xwin);
+  `tools/export_bss.cmake` completes the executable's exports there.
 - `docs/`: working notes on diagnostics and the renderer.
 
 ## Requirements
